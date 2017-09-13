@@ -1,0 +1,447 @@
+68K GAS  ./lab1_changecode.s 			page 1
+
+
+   1               	;;----------------------------------------------------------------------
+   2               	;; Partion of addresspace
+   3               	;;
+   4               	;; $1000 	: start (pc at start)
+   5               	;; $4000-$4003  : store correct lock-code here
+   6               	;; $4020-	: error message in ascci format
+   7               	;; $7000	: top of stack at start (sp, a7 is used as stackpointer)
+   8               	;;----------------------------------------------------------------------
+   9               	;;
+  10               	;; Subrutines
+  11               	;;
+  12               	;; printchar		: print character to terminal(code given)
+  13               	;; setuppia		: Init parallellport (code given)
+  14               	;; printstring		: print string
+  15               	;; deactivatealarm	: deactivate the alarm
+  16               	;; activatealarm	: acitvates the alarm
+  17               	;; getkey		: get character from hex-keyboard
+  18               	;; addkey		: push key to input-buffer
+  19               	;; clearinput		: clear input-buffer
+  20               	;; checkcode		: check if code is correct
+  21               	;;----------------------------------------------------------------------
+  22               	;;
+  23               	;;
+  24               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  25               	;;
+  26               	;; Subroutine tests
+  27               	;;
+  28               	;;
+  29               	START:
+  30               		;; jsr SETUPSTACK
+  31 0000 4FF8 7000 		lea $07000,A7	   ;; TODO sätt stackpekaren (A7=sp till 07000)
+  32 0004 4EBA 021A 		jsr MAIN
+  33 0008 1E3C 00FF 		move.b #255,d7 ;;avsluta programmet och dumpa alla register med
+  34 000c 4E4E      		trap #14
+  35 000e 4E75      		rts
+  36               		;;jsr DIE
+  37               	
+  38               	TESTDEFAULT
+  39 0010 283C 0000 		move.l #255,d4
+  39      00FF 
+  40 0016 2A3C 0000 		move.l #$255,d5
+  40      0255 
+  41 001c 4E75      		rts
+  42               	TESTPRINTCHAR 			;verified
+  43 001e 183C 0040 		move.b #64,d4 ;;TODO sätt d4 til7l 64
+  44 0022 4EBA 00A4 		jsr printchar ;TODO call printchar
+  45 0026 4E75      		rts
+  46               	TESTSETUPPIA 			;verifed
+  47 0028 4EBA 00B6 		jsr setuppia
+  48 002c 4E75      		rts
+  49               	
+  50               	TESTSETUPERRORMESSAGE 		;verified
+  51 002e 4EBA 00EC 		jsr setuperrormessage
+  52 0032 387C 4020 		move.w #$4020,a4
+  53 0036 1A3C 000F 		move.b #15,d5	
+  54 003a 4EBA 0102 		jsr printstring
+  55 003e 4E75      		rts
+68K GAS  ./lab1_changecode.s 			page 2
+
+
+  56               	TESTPRINTSTRING 		;verified
+  57               		;; lea $C126,a4   ;;todo ändra adress och langd till felmedelandet
+  58 0040 387C 4020 		move.w #$4020,a4 		;todo ändra adress och langd till felmedelandet
+  59               		;; 	move.l #16,d5
+  60 0044 7A0F      		move.l #15,d5
+  61 0046 4EBA 00F6 		jsr printstring
+  62 004a 4E75      		rts
+  63               	TESTACTIVATEALARM          ;verified
+  64 004c 4EBA 0092 		jsr setuppia
+  65 0050 4EBA 012E 		jsr activatealarm
+  66 0054 4E75      		rts
+  67               	TESTDEACTIVATEALARM 		;verified
+  68 0056 4EBA 0088 		jsr setuppia
+  69 005a 4EBA 0116 		jsr deactivatealarm
+  70 005e 4E75      		rts
+  71               	TESTGETKEY 			
+  72 0060 4EBA 007E 		jsr setuppia
+  73 0064 4EBA 0128 		jsr getkey
+  74 0068 4E75      		rts
+  75               	TESTADDKEY 			;verified
+  76 006a 4EBA 0174 		jsr clearinput
+  77 006e 4EBA 0140 		jsr addkey
+  78 0072 183C 0001 		move.b #1,d4
+  79 0076 4EBA 0138 		jsr addkey
+  80 007a 183C 0002 		move.b #2,d4
+  81 007e 4EBA 0130 		jsr addkey
+  82 0082 183C 0003 		move.b #3,d4
+  83 0086 4EBA 0128 		jsr addkey
+  84 008a 183C 0004 		move.b #4,d4
+  85 008e 4EBA 0120 		jsr addkey
+  86 0092 4E75      		rts
+  87               	TESTCLEARINPUT			;verified
+  88 0094 4EBA 014A 		jsr clearinput
+  89 0098 4E75      		rts
+  90               	TESTCHECKCODE			;verified
+  91 009a 4EBA 0076 		jsr setuppasscode
+  92 009e 21FC 0404 		move.l #$04040404,$4000	;shoould set d4 to 1
+  92      0404 4000 
+  93 00a6 4EBA 0142 		jsr checkcode
+  94 00aa 4E75      		rts
+  95               	TESTDELAYACTIVATION
+  96 00ac 4EBA 006E 		jsr setuperrormessage
+  97 00b0 4EBA 002E 		jsr setuppia
+  98 00b4 4EBA 014E 		jsr delayactivation
+  99 00b8 4E75      		rts
+ 100               	;;auxilary subroutines
+ 101               	SETUPSTACK
+ 102 00ba 4FF8 7000 		lea $07000,A7  ;TODO sätt stackpekaren (A7=sp till 07000)
+ 103 00be 4E75      		rts
+ 104               	DIE
+ 105 00c0 1E3C 00FF 		move.b #255,d7 ;;avsluta programmet och dumpa alla register med
+ 106 00c4 4E4E      		trap #14
+ 107 00c6 4E75      		rts
+ 108               	;;
+ 109               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 110               	;;
+ 111               	;; Inargument: ASCII-kodat tecken i register d4
+68K GAS  ./lab1_changecode.s 			page 3
+
+
+ 112               	;; Varning - Denna rutin gör inte att stega sig igenom med TRACE då den
+ 113               	;; använder serieporten på ett sätt som ar inkompatibelt med TRACE.
+ 114               	;; TODO testkör på tutor tutor.edu.liu.se
+ 115               	;;
+ 116               	printchar
+ 117 00c8 3F05      		move.w d5,-(a7) 	; spara unda d5 på stacken samt	 räkna ner
+ 118               					;stackpekaren stacken växer nerefrån och up
+ 119               	waittx
+ 120 00ca 1A39 0001 		move.b $10040,d5	;serieportens statusregister sidan 14
+ 120      0040 
+ 121               					;tutorhäftet dock ofullständig
+ 122 00d0 0205 0002 		and.b  #2,d5		;isolera bit 1 (00000010)(Ready to transmit)
+ 123               					;sätter z till 1 om resultat är noll
+ 124               					;(ready indikerasx med 1)
+ 125 00d4 67F4      		beq waittx		;Vänta tills serieporten klar at sända
+ 126               					;branch på zero-flaggan=1
+ 127 00d6 13C4 0001 		move.b d4,$10042	;skicka ut ()
+ 127      0042 
+ 128 00dc 3A1F      		move.w (a7)+,d5		;återställ från stack räkna upp sp d5
+ 129 00de 4E75      		rts			;return from subroutine
+ 130               	;;
+ 131               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 132               	;;
+ 133               	;; sätter upp parralleporten pinne 0 på PIAA blir utgång resten är
+ 134               	;; ingångar
+ 135               	;;
+ 136               	setuppia
+ 137 00e0 13FC 0000 		move.b #0,$10084 	;Välj datariktningsregister DDRA
+ 137      0001 0084 
+ 138 00e8 13FC 0001 		move.b #1,$10080	;Pinne 0 PIAA som utgång
+ 138      0001 0080 
+ 139 00f0 13FC 0004 		move.b #4,$10084	;Välj in/utgångsregister
+ 139      0001 0084 
+ 140 00f8 13FC 0000 		move.b #0,$10086	;Välj datariktningsregister DDRB
+ 140      0001 0086 
+ 141 0100 13FC 0000 		move.b #0,$10082	;Sätt all pinnar som ingångar
+ 141      0001 0082 
+ 142 0108 13FC 0004 		move.b #4,$10086	;Välj in/utgångsregister
+ 142      0001 0086 
+ 143 0110 4E75      		rts
+ 144               	
+ 145               	;;
+ 146               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 147               	;;
+ 148               	;; Stores the correct deactivation-code at $4010
+ 149               	;;
+ 150               	;;
+ 151               	setuppasscode
+ 152 0112 21FC 0605 		move.l #$06050100,$4010
+ 152      0100 4010 
+ 153 011a 4E75      		rts
+ 154               	
+ 155               	;;
+ 156               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 157               	;;
+ 158               	;; in: none
+ 159               	;; out: $4020-... will contain the error message in ascii.
+68K GAS  ./lab1_changecode.s 			page 4
+
+
+ 160               	;:	could use move.l instead
+ 161               	;;
+ 162               	setuperrormessage
+ 163 011c 21FC 4665 		move.l #$46656C61,$4020  ;fela
+ 163      6C61 4020 
+ 164 0124 21FC 6B74 		move.l #$6B746967,$4024  ;ktig
+ 164      6967 4024 
+ 165 012c 21FC 206B 		move.l #$206B6F64,$4028  ;kod!
+ 165      6F64 4028 
+ 166 0134 21FC 0021 		move.l #$00210A0D,$402C  ;\LF\CR
+ 166      0A0D 402C 
+ 167 013c 4E75      		rts
+ 168               	;;
+ 169               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 170               	;; Inargument: Pekare till strängen i a4
+ 171               	;; 	       Längd på strängen i d5
+ 172               	;;
+ 173               	printstring
+ 174 013e 3F05      		move.w d5,-(a7) 	;store on stack
+ 175               		;;WARNING could subtraction cause problems?
+ 176 0140 3F04      		move.w d4,-(a7) 	;store on stack
+ 177               	next
+ 178               		;; dbge d5,end
+ 179 0142 5305      		sub.b #1,d5
+ 180 0144 670A      		beq last	;if counter becomes zero goto last
+ 181 0146 181C      		move.b (a4)+,d4 ;; move char pointed to by a4 to d4 call printchar
+ 182 0148 4EBA FF7E 		jsr printchar 	 ;print out this character
+ 183 014c 4EFA FFF4 		jmp next
+ 184               	last
+ 185 0150 181C      		move.b (a4)+,d4 ;; move char pointed to by a4 to d4 call printchar
+ 186 0152 4EBA FF74 		jsr printchar	;print last charactar
+ 187 0156 381F      		move.w (a7)+,d4	;restore register from stack
+ 188 0158 3A1F      		move.w (a7)+,d5
+ 189 015a 4E75      		rts
+ 190               	;;
+ 191               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 192               	;;
+ 193               	;; Print out error message located at $4020
+ 194               	;;
+ 195               	;; Inargument: Pekare till strängen i a4
+ 196               	;; 	       Längd på strängen i d5
+ 197               	;;
+ 198               	;;
+ 199               	printerrormessage
+ 200 015c 3F0C      		move.w a4,-(a7) 	;store on stack
+ 201 015e 3F05      		move.w d5,-(a7) 	;store on stack
+ 202 0160 387C 4020 		move.w #$4020,a4	;error message begins at #4020
+ 203               	;;TODO lägg d5 på stack och återställ efter återhopp
+ 204 0164 1A3C 000F 		move.b #15,d5		;length of message
+ 205 0168 4EBA FFD4 		jsr printstring
+ 206 016c 3A1F      		move.w (a7)+,d5
+ 207 016e 385F      		move.w (a7)+,a4
+ 208 0170 4E75      		rts
+ 209               	;;
+ 210               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 211               	;; In: inga
+ 212               	;; Ut : inga
+68K GAS  ./lab1_changecode.s 			page 5
+
+
+ 213               	;;
+ 214               	;;Funktion: Släcker lysdioden kopplad till PIAA
+ 215               	;;
+ 216               	deactivatealarm
+ 217 0172 123C 0000 		move.b #0,d1
+ 218               		;; $10084 cra-2 controlls pia-a
+ 219               		;; or.b #4,$10084	 ;Välj PIAA as peripheral register (at $10080)
+ 220 0176 0239 0000 	 	and.b #0,$10080		;Pinne 0 high (could use move as well)
+ 220      0001 0080 
+ 221               	;;	move.b #0,$10080
+ 222 017e 4E75      		rts
+ 223               	;;
+ 224               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 225               	;; In: inga
+ 226               	;; Ut : inga
+ 227               	;;
+ 228               	;;Funktion: Tänder lysdioden kopplad till PIAA
+ 229               	;;
+ 230               	activatealarm
+ 231 0180 123C 0001 		move.b #1,d1 		;flagga för activt alarm
+ 232 0184 0039 0001 		or.b #1,$10080	;Pinne 0 high (could use move as well)
+ 232      0001 0080 
+ 233               	;; 	move.b #1,$10080
+ 234 018c 4E75      		rts
+ 235               	;;
+ 236               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 237               	;; In: inga
+ 238               	;; Ut : Tryckt knapp returneras i d4
+ 239               	;;
+ 240               	getkey
+ 241               	;;	move.b d5,-(a7) 	;store on stack	converted to move.w?
+ 242               	;;      move.b #4,$10086
+ 243               		;; parrallel porten $10082
+ 244               		;; kanske kan vänta på strobe i huvud programmet
+ 245               	waitforkey: 			;om  strobe satt läs av piab 0-3
+ 246 018e 1A39 0001 		move.b $10082,d5
+ 246      0082 
+ 247               		;; and.b #0F,d5
+ 248 0194 0805 0004 	 	btst #4,d5			;är pinne4 hög dvs strobe?
+ 249 0198 67F4      		beq waitforkey
+ 250 019a 1805      			move.b d5,d4 	;read piab
+ 251               		;; 	move.b d5,d4 	;read piab
+ 252               		;; move.b $10082,d4 	;read piab
+ 253 019c 0284 0000 		and.l #$0f,d4 	;clean up msb:s just in case
+ 253      000F 
+ 254               	keyreleased?
+ 255 01a2 1A39 0001 		move.b $10082,d5	;nödvändig ?	
+ 255      0082 
+ 256 01a8 0805 0004 		btst #4,d5
+ 257               					;and.b #0E,d5		;is strobe high
+ 258 01ac 66F4      		bne keyreleased?
+ 259               		;; move.b (a7)+,d5		
+ 260 01ae 4E75      		rts			
+ 261               	;;
+ 262               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 263               	;; In: inga
+ 264               	;; Ut : Tryckt knapp returneras i d4
+68K GAS  ./lab1_changecode.s 			page 6
+
+
+ 265               	;;
+ 266               	;waitforkey: 			;om  strobe satt läs av piab 0-3
+ 267               	;	move.b $10082,d5
+ 268               	;	and.b #8,d5 		;är pinne4 hög dvs strobe?
+ 269               	;	beq waitforkey
+ 270               	;	rts
+ 271               		
+ 272               	;;
+ 273               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 274               	;; In: choosen buttom shall be in d4
+ 275               	;; out: 
+ 276               	;;
+ 277               	;; Funktion: Flyttar innehållet på $40001-$40003 bakåt en byte till
+ 278               	;;	     $4000-$40002. Lagrar sedan innehållet i d4 på 40003 requirement use lsl
+ 279               	addkey
+ 280 01b0 11F8 5001 		move.b $5001,$5000
+ 280      5000 
+ 281 01b6 11F8 5002 		move.b $5002,$5001		
+ 281      5001 
+ 282 01bc 11F8 5003 		move.b $5003,$5002
+ 282      5002 
+ 283 01c2 11F8 4000 		move.b $4000,$5003
+ 283      5003 
+ 284 01c8 11F8 4001 		move.b $4001,$4000
+ 284      4000 
+ 285 01ce 11F8 4002 		move.b $4002,$4001
+ 285      4001 
+ 286 01d4 11F8 4003 		move.b $4003,$4002
+ 286      4002 
+ 287 01da 11C4 4003 		move.b d4,$4003
+ 288 01de 4E75      		rts
+ 289               	;;
+ 290               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 291               	;; In: inga
+ 292               	;; Ut: inga
+ 293               	;;
+ 294               	;; Funktioon: Sätter innehållet på $4000-$4003 till $FF
+ 295               	clearinput
+ 296 01e0 21FC FFFF 		move.l #$FFFFFFFF,$4000
+ 296      FFFF 4000 
+ 297 01e8 4E75      		rts
+ 298               	;;
+ 299               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 300               	;;In: Inga
+ 301               	;;Ut: returnera 1 i d4 om koden är korrekt, annars 0 i d4
+ 302               	;;
+ 303               	;;Funktion är kod i $4000 korrekt, krav får bara läsa i
+ 304               	;; $4000–$4003 respektive $4010–$4013 i denna subrutin
+ 305               	;;
+ 306               	checkcode
+ 307               		;;move.l #100,$4000
+ 308               		;;move.l #100,$4010
+ 309 01ea 2F05      		move.l d5,-(a7) 	;store on stack
+ 310 01ec 2A38 4010 		move.l $4010,d5
+ 311 01f0 BAB8 4000 		cmp.l  $4000,d5
+ 312 01f4 6706      		beq correct
+ 313 01f6 183C 0000 		move.b #0,d4
+68K GAS  ./lab1_changecode.s 			page 7
+
+
+ 314 01fa 6004      		bra resetregister
+ 315               	correct
+ 316 01fc 183C 0001 		move.b #1,d4
+ 317               	resetregister:	
+ 318 0200 2A1F      		move.l (a7)+,d5
+ 319 0202 4E75      		rts
+ 320               	
+ 321               	;;
+ 322               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 323               	;;
+ 324               	;; Intended to be used to delay reactivation of alarm
+ 325               	;; probes keypad and resets delay as long as A is not pressed
+ 326               	;; 
+ 327               	;;
+ 328               	delayactivation
+ 329 0204 3F05      		move.w d5,-(a7)		;
+ 330 0206 3F04      		move.w d4,-(a7)		;
+ 331               	resetcounter:	
+ 332 0208 7A03      		move.l #$000003,d5
+ 333               	waity:
+ 334 020a 4EBA FF82 		jsr getkey ; hmmm destroys content in d4 do need to consider this (stor on stack?)
+ 335               	
+ 336 020e 0C04 0041 		cmp.b #$41,d4 		;did we push 'A'
+ 337 0212 6706      		beq stop
+ 338 0214 5385      		sub.l #1,d5 		;decrement counter
+ 339 0216 6702      		beq stop
+ 340 0218 60F0      		bra waity
+ 341               	stop:
+ 342 021a 381F      		move.w (a7)+,d4
+ 343 021c 3A1F      		move.w (a7)+,d5
+ 344 021e 4E75      		rts 
+ 345               	;;
+ 346               	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ 347               	;;
+ 348               	;; This is the main loop of codelock
+ 349               	;;
+ 350               	MAIN
+ 351 0220 4EBA FEBE 		jsr setuppia
+ 352 0224 4EBA FEEC 		jsr setuppasscode
+ 353 0228 4EBA FEF2 		jsr setuperrormessage
+ 354 022c 4EBA FF52 		jsr activatealarm 	;start with activated alarm
+ 355 0230 123C 0001 		move.b #1,d1		;ha haaaa 
+ 356               	reset:
+ 357 0234 4EBA FFAA 		jsr clearinput
+ 358               	getannotherkey:
+ 359               		;; jsr waitforkey		;wait for user to push key
+ 360 0238 4EBA FF54 		jsr getkey		;get that key
+ 361 023c 0C04 000C 		cmp.b #12,d4		;is read key 'C'
+ 362 0240 6736      		beq main_dubblecheck
+ 363 0242 0C04 000F 		cmp.b #15,d4		;is read key 'F'
+ 364 0246 670E      		beq main_correct?
+ 365 0248 0C44 000A 		cmp #10,d4		;is read key 'A'
+ 366 024c 6722      		beq activate
+ 367 024e 4EBA FF60 		jsr addkey		;addkey to buffer	
+ 368 0252 4EFA FFE4 		jmp getannotherkey 	;jmp less optimal then bra?
+ 369               	main_correct?:
+ 370 0256 4EBA FF92 		jsr checkcode	     	;sets d4 to 1 if correct
+68K GAS  ./lab1_changecode.s 			page 8
+
+
+ 371 025a 0C04 0001 		cmp.b #1,d4		;was the given code correct?
+ 372 025e 6708      		beq deactivate
+ 373 0260 4EBA FEFA 		jsr printerrormessage
+ 374 0264 4EFA FFCE 		jmp reset
+ 375               	deactivate:
+ 376 0268 4EBA FF08 		jsr deactivatealarm
+ 377               		
+ 378               		;;TODO implement delay
+ 379               		;; modified for delay reactivation of alarm
+ 380 026c 4EFA FFC6 		 jmp reset
+ 381               	activate:
+ 382 0270 4EBA FF0E 		jsr activatealarm
+ 383 0274 4EFA FFBE 		jmp reset
+ 384               	main_dubblecheck:
+ 385 0278 0C01 0001 		cmp.b #1,d1
+ 386 027c 67B6      		beq reset
+ 387 027e 2638 4000 		move.l $4000,d3
+ 388 0282 B6B8 5000 		cmp.l $5000,d3
+ 389 0286 6702      		beq main_newcode
+ 390 0288 60AA      		bra reset
+ 391               	main_newcode:
+ 392 028a 21F8 4000 		move.l $4000,$4010		;har vi addet c
+ 392      4010 
+ 393 0290 60DE      		bra activate

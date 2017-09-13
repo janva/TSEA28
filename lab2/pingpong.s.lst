@@ -1,0 +1,150 @@
+68K GAS  ./pingpong.s 			page 1
+
+
+   1               	;;----------------------------------------------------------------------
+   2               	;; Partitioning of addresspace
+   3               	;; In use $900-$7000. Note $2000-$2500 reserverd for preprogrammed 
+   4               	;; subroutines.
+   5               	;; 
+   6               	;; $1000 	: start (pc at start)
+   7               	;; $7000	:suggested top of stack
+   8               	;;----------------------------------------------------------------------
+   9               	;; The following subroutines from the ROM was used in this part
+  10               	;; 
+  11               	;; $20EC PINIT 
+  12               	;;   	 sets PA7-PA0,PB7-PB0 as out, CA1,CA2,CB1,CB2 
+  13               	;; 	 programmed to interput on positive (flank:-)
+  14               	;;
+  15               	;; $2000 DELAY
+  16               	;; 	 delay takes param in D0 interpeted as ms
+  17               	;;
+  18               	;;----------------------------------------------------------------------
+  19               	;; 	
+  20               	;; Cheet sheet 	
+  21               	;; 	
+  22               	;;  C300 SKYFFLA  	
+  23               	;;  20EC PINIT
+  24               	;;  $2020 SKBAK	
+  25               	;;  $2048 SKAVV 	
+  26               	;;  $20A6 SKAVH	
+  27               	;;  $2000 DELAY
+  28               	;; 
+  29               	;;  CB = IRQB =I1 =IRQ2 = interruptlevel 2 = interuptvector @$68 = Interuptroutine @$1100
+  30               	;;  CA = IRQA =I0/2 = IRQ5 = interruptlevel 5 = interuptvector @$74 = Interuptroutine @$1200
+  31               	;;  IRQ7 = black button always get priority
+  32               	;;
+  33               	;;   Above in short CB generats interuppt at level2. Which looks upp its routine-address at $68
+  34               	;;   Above in short CA generats interuppt at level5. Which looks upp its routine-address at $74
+  35               	;; 
+  36               	;;   SR=2700 pay attention to what happens to 7 that number setting IPL0-3
+  37               	;;   (bits 8,9,10 in SR )
+  38               	;;  
+  39               	;;   External signal CA1 sets CRA7
+  40               	;;   External signal CA2 sets CRA6
+  41               	;;   These are automatically reset when we read PIAA    
+  42               	;;
+  43               	;;   When interuppt occurs SR and PC are pushed on stack. 
+  44               	;;   When returning from interuppt PC and SR are reset.
+  45               	;;   Implication of this is that the INTERUPTLEVEL IS RESET
+  46               	;;   to it's previous level when returning from interuppt
+  47               	;;   since interupptlevel is indicated in SR I0-2
+  48               	;;  
+  49               	;;  
+  50               	;;  
+  51               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  52               	;;   ------------------------------------------------ :SR  
+  53               	;;  | T|  | S|  |  |I2|I1|I0|  |  |  |X |N |Z |V |C |  
+  54               	;;   ------------------------------------------------
+  55               	;;  
+  56               	;;
+  57               	;;   7  6  5  4  3  2  1  0
+68K GAS  ./pingpong.s 			page 2
+
+
+  58               	;;   ------------------------ :CRA      $10080 data direction A (bit 2 in CRA=0)
+  59               	;;  |  |  |  |  |  |  |  |  |           $10080 PIAA dataregister A (bit 2 in CRA=1)
+  60               	;;   ------------------------           $10084 CRA Cotntrol register A
+  61               	;;  ------ -------- -- -----            $10082 data direction B
+  62               	;;    |        |     |   |Styr CA1      $10082 data PIAB dataregister B
+  63               	;;    |        |     |                  $10086 CRB Control register B
+  64               	;;    |        |     |0:DDRA
+  65               	;;    |        |     |1:PIAA
+  66               	;;    |        |
+  67               	;;    |        |styr CA2
+  68               	;;    |
+  69               	;;    |signalflaggor
+  70               	;;     avbrott
+  71               	;;
+  72               	;;
+  73               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  74               	;;   ------------------------------------------------
+  75               	;;  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+  76               	;;   ------------------------------------------------
+  77               	;;   
+  78               	;;-----------------------------------------------------------------------
+  79               	;;
+  80               	
+  81               	start
+  82               		;; 	jsr skyffla funkar inte
+  83 0000 4FF8 7000 		lea $7000,A7		;set stackpointer
+  84               	;;; 	jsr $C300		;special inte subrutin?
+  85 0004 4EB8 20EC 		jsr $20EC
+  86 0008 4EBA 0012 		jsr setupInterrupts   ;maps interuppts to there handler subroutines
+  87 000c 4EBA 002C 		jsr initNewGame
+  88 0010 4EBA 004A 		jsr startMatch
+  89 0014 1E3C 00FF 		move.b #255,d7
+  90 0018 4E4E      		trap #14
+  91 001a 4E75      		rts
+  92               		
+  93               	
+  94               	setupInterrupts
+  95 001c 21FA 0040 		move.l left_button,$068 	;irq-level2 handler @$1100
+  95      0068 
+  96 0022 21FA 003C 		move.l right_button,$074 	;irq-level2 handler @$1200
+  96      0074 
+  97 0028 4A39 0001 		tst.b $10080		;nollställ interupt ca1
+  97      0080 
+  98 002e 4A39 0001 		tst.b $10082		;nollställ interupt cb1
+  98      0082 
+  99               		;;TODO chang to and or or instead
+ 100 0034 46FC 2700 		move.w #$2700,SR	;We don't want any interrupts during initiation
+ 101 0038 4E75      		rts
+ 102               		;; problem vill ha kunna nollställa spelet utan  att behöva
+ 103               		;; köra setupInterrupts, är det ok att tillfälligt stänga av
+ 104               		;; irq via CRA,CRB hmm inte tillåtet,
+ 105               		;; ser två lösngingar
+ 106               		;; 1) använd tillfälliga irq-hanterare (1100, 1200) till subrutin
+ 107               		;; som bara dumpar inkommande interupter
+ 108               		;; 2) start alltid från början med initNewGame sedan setupInterupts
+ 109               		;;    dock löser nog dettta inte problemet
+ 110               	initNewGame
+68K GAS  ./pingpong.s 			page 3
+
+
+ 111 003a 007C 0700 		or.w #$0700,SR		;Don't handle irq:s during init
+ 112 003e 203C 0000 		move.l #500,D0		;Time each diode will be lit
+ 112      01F4 
+ 113 0044 243C 0000 		move.l #$80,D2		;Start ball in left  position
+ 113      0080 
+ 114 004a 7600      		move.l #$00,D3		;Player A score 0
+ 115 004c 7800      		move.l #$00,D4		;Player B score 0
+ 116 004e 1A3C 0000 		move.b #$00,D5		;Starting from left 
+ 117 0052 1C3C 00FF 		move.b #$FF,D6		;Start in serving state
+ 118 0056 027C F8FF 		and.w #$F8FF,SR		;Handle interrupts let floodgates open 
+ 119 005a 4E75      		rts
+ 120               	startMatch
+ 121 005c 4E75      		rts
+ 122 005e 4E75      	left_button rts
+ 123 0060 4E75      	right_button rts
+ 124               	
+ 125               		
+ 126               		;;Testing how constants work
+ 127               		;; exempel TABS DC.B 'Provstrang' allokera minne storlek byte lägg boksttäverna där
+ 128               		;; TABS pekar ut addressen nästa rad (DC.B $0D) ligger direct efter dessa?
+ 129               		;; 		DC.B $0D
+ 130               			
+ 131               		;; cmp.l #buffer_start, a0 är addressen i A0 första addressen där konstanterna börjar
+ 132               		;;buffer _start:
+ 133               		;; dc.b 0,0,0,0,0,0,0
+ 134               		;;buffer _end
+ 135               		

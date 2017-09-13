@@ -1,0 +1,899 @@
+68K GAS  ./pingis.s 			page 1
+
+
+   1               	
+   2               	;;----------------------------------------------------------------------
+   3               	;; Partitioning of addresspace
+   4               	;; In use $900-$7000. Note $2000-$2500 reserverd for preprogrammed 
+   5               	;; subroutines.
+   6               	;; 
+   7               	;; $1000 	: start (pc at start)
+   8               	;; $7000	:suggested top of stack
+   9               	;;----------------------------------------------------------------------
+  10               	;; The following subroutines from the ROM was used in this part
+  11               	;; 
+  12               	;; $20EC PINIT 
+  13               	;;   	 sets PA7-PA0,PB7-PB0 as out, CA1,CA2,CB1,CB2 
+  14               	;; 	 programmed to interput on positive (flank:-)
+  15               	;;
+  16               	;; $2000 DELAY
+  17               	;; 	 delay takes param in D0 interpeted as ms
+  18               	;;
+  19               	;;----------------------------------------------------------------------
+  20               	;; 	
+  21               	;; Cheet sheet 	
+  22               	;; 	
+  23               	;;  C300 SKYFFLA  	
+  24               	;;  20EC PINIT
+  25               	;;  $2020 SKBAK	
+  26               	;;  $2048 SKAVV 	
+  27               	;;  $20A6 SKAVH	
+  28               	;;  $2000 DELAY
+  29               	;; 
+  30               	;;  CB = IRQB =I1 =IRQ2 = interruptlevel 2 = interuptvector @$68 = Interuptroutine @$1100
+  31               	;;  CA = IRQA =I0/2 = IRQ5 = interruptlevel 5 = interuptvector @$74 = Interuptroutine @$1200
+  32               	;;  IRQ7 = black button always get priority
+  33               	;;
+  34               	;;   Above in short CB generats interuppt at level2. Which looks upp its routine-address at $68
+  35               	;;   Above in short CA generats interuppt at level5. Which looks upp its routine-address at $74
+  36               	;; 
+  37               	;;   SR=2700 pay attention to what happens to 7 that number setting IPL0-3
+  38               	;;   (bits 8,9,10 in SR )
+  39               	;;  
+  40               	;;   External signal CA1 sets CRA7
+  41               	;;   External signal CA2 sets CRA6
+  42               	;;   These are automatically reset when we read PIAA    
+  43               	;;
+  44               	;;   When interuppt occurs SR and PC are pushed on stack. 
+  45               	;;   When returning from interuppt PC and SR are reset.
+  46               	;;   Implication of this is that the INTERUPTLEVEL IS RESET
+  47               	;;   to it's previous level when returning from interuppt
+  48               	;;   since interupptlevel is indicated in SR I0-2
+  49               	;;  
+  50               	;;  
+  51               	;;  
+  52               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  53               	;;   ------------------------------------------------ :SR  
+  54               	;;  | T|  | S|  |  |I2|I1|I0|  |  |  |X |N |Z |V |C |  
+  55               	;;   ------------------------------------------------
+  56               	;;  
+  57               	;;
+68K GAS  ./pingis.s 			page 2
+
+
+  58               	;;   7  6  5  4  3  2  1  0
+  59               	;;   ------------------------ :CRA      $10080 data direction A (bit 2 in CRA=0)
+  60               	;;  |  |  |  |  |  |  |  |  |           $10080 PIAA dataregister A (bit 2 in CRA=1)
+  61               	;;   ------------------------           $10084 CRA Cotntrol register A
+  62               	;;  ------ -------- -- -----            $10082 data direction B
+  63               	;;    |        |     |   |Styr CA1      $10082 data PIAB dataregister B
+  64               	;;    |        |     |                  $10086 CRB Control register B
+  65               	;;    |        |     |0:DDRA
+  66               	;;    |        |     |1:PIAA
+  67               	;;    |        |
+  68               	;;    |        |styr CA2
+  69               	;;    |
+  70               	;;    |signalflaggor
+  71               	;;     avbrott
+  72               	;;
+  73               	;;
+  74               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  75               	;;   ------------------------------------------------
+  76               	;;  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+  77               	;;   ------------------------------------------------
+  78               	;;
+  79               	;; D0: Tidsfördröjning vid anrop av DELAY.
+  80               	;; D2: Lagring av hur lysdioderna är tända.
+  81               	;; D3: Resultatregister spelare A.(h�ger)
+  82               	;; D4: Resultatregister spelare B.(v�nster)
+  83               	;; D5: Flyttningsriktning: 00=vänster, FF=höger.
+  84               	;; D6: Servstatus: 00=ej serve, FF=serve.	
+  85               	;;
+  86               	;;-----------------------------------------------------------------------
+  87               	;;
+  88               	start
+  89 0000 4FF8 7000 		lea $7000,A7		;set stackpointer
+  90               	;;; 	jsr $C300		;special inte subrutin?
+  91 0004 4EB8 20EC 		jsr $20EC	    	;PINIT
+  92               		;;jsr setupAndRunTest 
+  93               	
+  94 0008 4EBA 0012 		jsr setupInterrupts   	;maps interuppts to there handler subroutines
+  95 000c 4EBA 0030 		jsr initNewGame
+  96 0010 4EBA 0060 		jsr run
+  97 0014 1E3C 00FF 		move.b #255,d7
+  98 0018 4E4E      		trap #14
+  99 001a 4E75      		rts
+ 100               	
+ 101               	setupInterrupts
+ 102 001c 21FC 0000 		move.l #leftButton,$068 	;irq-level2 handler @$1100
+ 102      0000 0068 
+ 103 0024 21FC 0000 		move.l #rightButton,$074 ;irq-level2 handler @$1200
+ 103      0000 0074 
+ 104 002c 4A39 0001 		tst.b $10080		;nollställ interupt ca1
+ 104      0080 
+ 105 0032 4A39 0001 		tst.b $10082		;nollställ interupt cb1
+ 105      0082 
+ 106 0038 46FC 2700 		move.w #$2700,SR	;We don't want any interrupts during initiation
+ 107 003c 4E75      		rts
+ 108               		;; problem vill ha kunna nollställa spelet utan  att behöva
+ 109               		;; köra setupInterrupts, är det ok att tillfälligt stänga av
+ 110               		;; irq via CRA,CRB hmm inte tillåtet,
+68K GAS  ./pingis.s 			page 3
+
+
+ 111               		;; ser två lösngingar
+ 112               		;; 1) använd tillfälliga irq-hanterare (1100, 1200) till subrutin
+ 113               		;; som bara dumpar inkommande interupter
+ 114               		;; 2) start alltid från början med initNewGame sedan setupInterupts
+ 115               		;;    dock löser nog dettta inte problemet
+ 116               	initNewGame
+ 117               	;;	or.w #$0700,SR		;Don't handle irq:s during init
+ 118 003e 203C 0000 		move.l #1000,D0		;Time each diode will be lit
+ 118      03E8 
+ 119 0044 243C 0000 		move.l #$80,D2		;Start ball in left  position
+ 119      0080 
+ 120 004a 13C2 0001 		move.b d2,$10080
+ 120      0080 
+ 121 0050 163C 0000 		move.b #$00,D3		;Player A score 0
+ 122 0054 183C 0000 		move.b #$00,D4		;Player B score 0
+ 123 0058 1A3C 00FF 		move.b #$FF,D5		;Starting from left 
+ 124 005c 1C3C 00FF 		move.b #$FF,D6		;Start in serving state
+ 125 0060 4A39 0001 		tst.b $10080		;clear to receive interupts aknowledge
+ 125      0080 
+ 126 0066 4A39 0001 		tst.b $10082
+ 126      0082 
+ 127 006c 027C F8FF 		and.w #$F8FF,SR		;Handle interrupts let floodgates open
+ 128 0070 4E75      		rts
+ 129               	;;----------------------------------------------------------------------
+ 130               	;;
+ 131               	;; Description: this is the main entry point for game after setup
+ 132               	;;              has finnished. Starts and runs the game.
+ 133               	;;
+ 134               	;; 
+ 135               	;;----------------------------------------------------------------------
+ 136               	;; 
+ 137               	run
+ 138               	waitServe_run:
+ 139 0072 13C2 0001 		move.b d2,$10080 	;varf�r g�r det inte t�nda i newserve?
+ 139      0080 
+ 140 0078 0C06 00FF 		cmp.b #$FF,D6 		;Are we in serve state?
+ 141 007c 67F4      		beq waitServe_run
+ 142 007e 007C 0700 		or.w #$0700,SR	 ;;we don't want to allow interupts inside here
+ 143 0082 4EBA 002C 		jsr moveBall
+ 144 0086 4EBA 003C 		jsr isOut			;;gick bollen ut?
+ 145 008a 0C01 00FF 		cmp.b #$FF,D1		;out return FF in D1 if ball outside
+ 146 008e 660E      		bne shootBall_run       ;ball was not out so new round trip
+ 147 0090 4EBA 0044 		jsr score
+ 148 0094 4EBA 005A 		jsr newServe		
+ 149 0098 027C F8FF 		and #$F8FF,SR		;not so pretty quickfix
+ 150 009c 60D4      		bra waitServe_run
+ 151               	shootBall_run:	
+ 152 009e 027C F8FF 		and #$F8FF,SR		;Ok receive irq maybe can narrow it down later
+ 153 00a2 4EB8 2000 		jsr $2000
+ 154 00a6 203C 0000 		move.l #1000,D0
+ 154      03E8 
+ 155 00ac 60C4      		bra waitServe_run 
+ 156 00ae 4E75      		rts 			;we might want to add quite button
+ 157               	;;----------------------------------------------------------------------
+ 158               	;;
+ 159               	;; Description: Move ball we step in direction of balls current direction
+ 160               	;;              
+68K GAS  ./pingis.s 			page 4
+
+
+ 161               	;;
+ 162               	;; In: D2 Current position of the ball.
+ 163               	;;     D5 Current direction of ball 
+ 164               	;; out: D2 Current positon of ball move on step in its direction
+ 165               	;; 	
+ 166               	;;----------------------------------------------------------------------
+ 167               	;;
+ 168               	moveBall
+ 169 00b0 0C05 0000 		cmp.b #$00,d5		;is ball currently moving left
+ 170 00b4 6704      		beq moveLeft_moveBall
+ 171 00b6 E20A      		lsr.b #1,d2
+ 172 00b8 6002      		bra writeToPIA_moveBall	;kommer hit raaaaser igenom andra bollarna
+ 173               	moveLeft_moveBall:
+ 174 00ba E30A      		lsl.b #1,d2
+ 175               	writeToPIA_moveBall:
+ 176 00bc 13C2 0001 		move.b d2,$10080 	;write ball position to display
+ 176      0080 
+ 177 00c2 4E75      		rts
+ 178               	
+ 179               	;;----------------------------------------------------------------------
+ 180               	;;
+ 181               	;; Description: Checks whether ball inside table or not.
+ 182               	;;
+ 183               	;; In: none  
+ 184               	;; out: D1 set to $FF ball went outside else $00
+ 185               	;; 
+ 186               	;;----------------------------------------------------------------------
+ 187               	;; 
+ 188               	isOut
+ 189 00c4 0C02 0000 		cmp.b #$00,D2  		;ball is out?
+ 190 00c8 6706      		beq is_out		;if out 
+ 191 00ca 123C 0000 		move.b #$00,D1
+ 192 00ce 4E75      		rts
+ 193               	is_out:
+ 194 00d0 123C 00FF 		move.b #$FF,D1	
+ 195 00d4 4E75      		rts
+ 196               	;;----------------------------------------------------------------------
+ 197               	;;
+ 198               	;; Description: Increases score to the deserving player based on
+ 199               	;; 		current direction
+ 200               	;;
+ 201               	;; In: none  
+ 202               	;; out: D3 or D4 is incremented by one 
+ 203               	;; 
+ 204               	;;----------------------------------------------------------------------
+ 205               	;;
+ 206               	score
+ 207 00d6 BA38 0000 		cmp.b $00,D5		;was ball moving i left direction
+ 208 00da 6606      		bne rightPoint_score
+ 209 00dc 4EBA 000E 		jsr pointLeft
+ 210 00e0 4E75      		rts
+ 211               	rightPoint_score:
+ 212 00e2 4EBA 0004 		jsr pointRight
+ 213 00e6 4E75      		rts
+ 214               	;;----------------------------------------------------------------------
+ 215               	;;
+ 216               	;; Description: Hands point to right hand side player
+68K GAS  ./pingis.s 			page 5
+
+
+ 217               	;;
+ 218               	;; In: none  
+ 219               	;; out: D3 or D4 is incremented by one 
+ 220               	;; 
+ 221               	;;----------------------------------------------------------------------
+ 222               	;; 
+ 223               	pointRight
+ 224 00e8 5203      		add.b #1,d3
+ 225 00ea 4E75      		rts
+ 226               	;;----------------------------------------------------------------------
+ 227               	;;
+ 228               	;; Description: Hands point to left hand side player
+ 229               	;;
+ 230               	;; In: none  
+ 231               	;; out: D3 incremented by one
+ 232               	;; 
+ 233               	;;----------------------------------------------------------------------
+ 234               	;; 
+ 235               	pointLeft
+ 236 00ec 5204      		add.b #1,d4
+ 237 00ee 4E75      		rts
+ 238               	;;----------------------------------------------------------------------
+ 239               	;;
+ 240               	;; Description: Sets up game for new serve shall only be called when
+ 241               	;;              when ball is outside. Othervise behaivour UNDEFINED. 
+ 242               	;;
+ 243               	;; In: D5 takes current direction of ball to decide who serves next
+ 244               	;; out: D2 the ball(diode) set in serve position.
+ 245               	;; 
+ 246               	;;----------------------------------------------------------------------
+ 247               	;;
+ 248               	;;; lurigt men skulle kanske kunna uttnyttja interuppt för att se vem som skall
+ 249               	newServe
+ 250               		;;Om interuppt slog in behöver jag inte använda denna
+ 251               		;; denna anropas bara om bollen går utanför kanske kan lägga testen
+ 252               	        ;; för om bollen är utanför här returnera felflagga. hmmmm several
+ 253               		;; responsibilitys
+ 254 00f0 0C05 0000 		cmp.b #$00,d5
+ 255 00f4 6706      		beq right_newServe
+ 256 00f6 4EBA 000A 		jsr newServeLeft
+ 257 00fa 4E75      		rts
+ 258               	right_newServe:	
+ 259 00fc 4EBA 0012 		jsr newServeRight
+ 260 0100 4E75      		rts
+ 261               	;;----------------------------------------------------------------------
+ 262               	;;
+ 263               	;; Description: Sets ball in serveposition for left player and signals
+ 264               	;;              signals sereve 
+ 265               	;;
+ 266               	;; In: D5 takes current direction of ball to decide who serves next
+ 267               	;; out: D2 the ball(diode) set in serve position.
+ 268               	;;      D6 set serve signal to serve  (FF)
+ 269               	;;      D5 should be move in right  (FF)
+ 270               	;; 
+ 271               	;;----------------------------------------------------------------------
+ 272               	;;
+ 273               	newServeLeft
+68K GAS  ./pingis.s 			page 6
+
+
+ 274 0102 143C 0080 		move.b #%10000000,d2
+ 275 0106 1C3C 00FF 		move.b #$FF,D6
+ 276 010a 1A3C 00FF 		move.b #$FF,D5
+ 277               		;; move.b d2,$10080
+ 278 010e 4E75      		rts
+ 279               	;;----------------------------------------------------------------------
+ 280               	;;
+ 281               	;; Description: Sets up game for new serve shall only be called when
+ 282               	;;              when ball is outside. Othervise behaivour UNDEFINED. 
+ 283               	;;
+ 284               	;; In: D5 takes current direction of ball to decide who serves next
+ 285               	;; out: D2 the ball(diode) set in serve position.
+ 286               	;; 	D6 set serve signal to serve  (FF)
+ 287               	;; 	D5 move in right direction
+ 288               	;;----------------------------------------------------------------------
+ 289               	;;
+ 290               	newServeRight
+ 291 0110 143C 0001 		move.b #%00000001,d2
+ 292 0114 1A3C 0000 		move.b #$00,D5
+ 293 0118 1C3C 00FF 		move.b #$FF,D6
+ 294               		;; move.b d2,$10080
+ 295 011c 4E75      		rts
+ 296               		
+ 297               	;;----------------------------------------------------------------------
+ 298               	;;
+ 299               	;; Description: Interrupt-handler subroutin for the right hand side
+ 300               	;;  		button. Will check whether we hit the ball or not.
+ 301               	;;		If we did hit it ball will be returned in opposite
+ 302               	;;		direction othervise point is given to the oponent
+ 303               	;;		as well as the benefit of serving next. 
+ 304               	;;
+ 305               	;;
+ 306               	;; In: D2 to check if ball is in hitting position.
+ 307               	;;     D6 to check if we are in serve position or not
+ 308               	;; 
+ 309               	;; out: D5 to set new direction of ball.  
+ 310               	;; 
+ 311               	;;----------------------------------------------------------------------
+ 312               	;;
+ 313               	rightButton
+ 314 011e 4A39 0001 		tst.b $10080			;eventuellt fel
+ 314      0080 
+ 315 0124 007C 0700 		or.w #$0700,SR			;raise interrupt level 7
+ 316 0128 0C02 0001 		cmp.b #%00000001,d2 		;ball in position?
+ 317 012c 670A      		beq ballInPosition_rightButton	;if ball was in hitting pos
+ 318 012e 4EBA FFBC 		jsr pointLeft			; point to left player
+ 319 0132 4EBA FFCE 		jsr newServeLeft		; also set serve flag
+ 320 0136 6010      		bra resetIRQLevel_rigthButton
+ 321               	ballInPosition_rightButton:
+ 322 0138 1A3C 0000 		move.b #$00,D5			;change balls direction (to  move left)
+ 323 013c 0C06 00FF 		cmp.b #$FF,d6                    ;is serve indicator on
+ 324 0140 6702      		beq serveOn_rightButton		;if serve is on then turn it off
+ 325 0142 6004      		bra resetIRQLevel_rigthButton	;maybe overkill could just turn it on
+ 326               	serveOn_rightButton:	
+ 327 0144 4EBA 0038 		jsr turnServeOff
+ 328               	resetIRQLevel_rigthButton:
+ 329 0148 027C F8FF 		and.w #$F8FF,SR	
+68K GAS  ./pingis.s 			page 7
+
+
+ 330 014c 4E73      		rte
+ 331               	
+ 332               		
+ 333               	;;----------------------------------------------------------------------
+ 334               	;;
+ 335               	;; Description: Interrupt-handler subroutin for the lef hand side
+ 336               	;;  		button. Will check whether we hit the ball or not.
+ 337               	;;		If we did hit it ball will be returned in opposite
+ 338               	;;		direction othervise point is given to the oponent
+ 339               	;;		as well as the benefit of serving next. 
+ 340               	;;
+ 341               	;;
+ 342               	;;
+ 343               	;; In: D2 to check if ball is in hitting position.
+ 344               	;;     D6 to check if we are in serve position or not
+ 345               	;; 
+ 346               	;; out: D5 to set new direction of ball.  
+ 347               	;; 
+ 348               	;;----------------------------------------------------------------------
+ 349               	;;
+ 350               	leftButton
+ 351               		;;OBS OBS OBS OBS kan ha betydelse ordning
+ 352 014e 4A39 0001 		tst.b $10082 			; aknowkledge interrupt received
+ 352      0082 
+ 353 0154 007C 0700 		or.w #$0700,SR			; raise interrupt level 7
+ 354 0158 0C02 0080 		cmp.b #%10000000,d2 		; ball in position?
+ 355 015c 670A      		beq ballInPosition_leftButton	; if ball was in hitting pos
+ 356 015e 4EBA FF88 		jsr pointRight			; point to left player
+ 357 0162 4EBA FFAC 		jsr newServeRight		; also set serve flag
+ 358 0166 6010      		bra resetIRQLevel_leftButton
+ 359               	ballInPosition_leftButton
+ 360 0168 1A3C 00FF 		move.b #$FF,D5			;change balls direction (to  move left)
+ 361 016c 0C06 00FF 		cmp.b #$FF,d6			;is serve indicator on
+ 362 0170 6702      		beq serveOn_leftButton		;if serve is on then turn it off
+ 363 0172 6004      		bra resetIRQLevel_leftButton
+ 364               	serveOn_leftButton:	
+ 365 0174 4EBA 0008 		jsr turnServeOff
+ 366               	resetIRQLevel_leftButton:
+ 367 0178 027C F8FF 		and.w #$F8FF,SR	
+ 368 017c 4E73      		rte
+ 369               	;;--------------------------------------------------------------------------------
+ 370               	;; 
+ 371               	;; Description: set serve status off
+ 372               	;; 
+ 373               	;;--------------------------------------------------------------------------------
+ 374               	;; 
+ 375               	turnServeOff
+ 376 017e 1C3C 0000 		move.b #$00,D6
+ 377 0182 4E75      		rts
+ 378               	
+ 379               		;;Testing how constants work
+ 380               		;; exempel TABS DC.B 'Provstrang' allokera minne storlek byte lägg boksttäverna där
+ 381               		;; TABS pekar ut addressen nästa rad (DC.B $0D) ligger direct efter dessa?
+ 382               		;; 		DC.B $0D
+ 383               			
+ 384               		;; cmp.l #buffer_start, a0 är addressen i A0 första addressen där konstanterna börjar
+ 385               		;;buffer _start:
+68K GAS  ./pingis.s 			page 8
+
+
+ 386               		;; dc.b 0,0,0,0,0,0,0
+ 387               		;;buffer _end
+ 388               	;;--------------------------------------------------------------------------------
+ 389               	;; 
+ 390               	;; Testsection
+ 391               	;; remember to load $C300
+ 392               	;; individual test will set bitpattern i d1 1 succes 0 fail
+ 393               	setupAndRunTest
+ 394 0184 4FF8 7000 		lea $7000,A7
+ 395 0188 4EB8 20EC 		jsr $20EC 		;pinit
+ 396 018c 7200      		move.l #$00,d1
+ 397               		;jsr setupInterupts_test
+ 398               		;; jsr initNewGame_test
+ 399               		;;jsr moveBall_test
+ 400               		;;jsr isOut_test
+ 401               		;;jsr score_test
+ 402               		;;jsr pointRight_test	
+ 403               		;;jsr pointLeft_test
+ 404               		;; jsr newServe_test
+ 405               		;;jsr newServeRight_test
+ 406               		;;jsr newServeLeft_test
+ 407               		;;jsr rightButton_test
+ 408 018e 4EBA 0232 		jsr leftButton_test
+ 409 0192 1E3C 00FF 		move.b #255,d7
+ 410 0196 4E4E      		trap #14
+ 411 0198 4E75      		rts
+ 412               	
+ 413               	;; figure out a way to maybe make stubs for the interrupt handlers
+ 414               	;; excpected behaviour
+ 415               	;; 1) Link interuppthandlers 
+ 416               	;; 2) reset aknowledge kan läsas
+ 417               	;; 3) set irq level to 7 
+ 418               	;; 
+ 419               	setupInterupts_test
+ 420 019a 4EBA FE80 		jsr setupInterrupts
+ 421               		;; cmp #rightButton,($074)
+ 422               		;; fråga finns det något sätt att typ hitta addressen till
+ 423               		;; en label och använda den för att skriva in en kodsnutt
+ 424               		;; på den addressen
+ 425 019e 40C0      		move.w SR,D0
+ 426 01a0 0240 0700 		and.w #$0700,D0 		;isolera
+ 427 01a4 4E75      		rts
+ 428               	initNewGame_test	
+ 429 01a6 4EBA FE96 		jsr initNewGame
+ 430 01aa 0C40 07D0 		cmp.w #2000,D0
+ 431 01ae 6644      		bne fail_initNewgame_test
+ 432 01b0 0081 F000 		or.l #$F0000000,d1
+ 432      0000 
+ 433 01b6 0C02 0080 		cmp.b #%10000000,D2
+ 434 01ba 6638      		bne fail_initNewgame_test
+ 435 01bc 0081 0F00 		or.l #$0F000000,d1
+ 435      0000 
+ 436 01c2 0C03 0000 		cmp.b #0,D3
+ 437 01c6 662C      		bne fail_initNewgame_test
+ 438 01c8 0081 00F0 		or.l #$00F00000,d1
+ 438      0000 
+ 439 01ce 0C04 0000 		cmp.b #$00,D4
+68K GAS  ./pingis.s 			page 9
+
+
+ 440 01d2 6620      		bne fail_initNewgame_test
+ 441 01d4 0081 000F 		or.l #$000F0000,d1
+ 441      0000 
+ 442 01da 0C05 00FF 		cmp.b #$FF,D5
+ 443 01de 6614      		bne fail_initNewgame_test
+ 444 01e0 0081 0000 		or.l #$0000F000,d1
+ 444      F000 
+ 445 01e6 0C06 00FF 		cmp.b #$FF,D6
+ 446 01ea 6608      		bne fail_initNewgame_test
+ 447 01ec 0081 0000 		or.l #$00000FFF,d1
+ 447      0FFF 
+ 448 01f2 4E75      		rts
+ 449               	fail_initNewgame_test:
+ 450 01f4 123C 0000 		move.b #$00,d1
+ 451 01f8 4E75      		rts
+ 452               		
+ 453               	run_test
+ 454 01fa 4EBA FE76 		jsr run
+ 455 01fe 4E75      		rts
+ 456               	
+ 457               	moveBall_test
+ 458               		;;left
+ 459 0200 3A3C 0000 		move #$00,d5
+ 460 0204 143C 0001 		move.b #%00000001,d2
+ 461 0208 4EBA FEA6 		jsr moveBall
+ 462 020c 0C02 0002 		cmp.b  #%00000010,d2
+ 463 0210 6670      		bne fail_moveBall_test
+ 464 0212 0081 F000 		or.l #$F0000000,d1	
+ 464      0000 
+ 465               	
+ 466 0218 143C 0080 		move.b #%10000000,d2
+ 467 021c 4EBA FE92 		jsr moveBall
+ 468 0220 0C02 0000 		cmp.b  #%00000000,d2
+ 469 0224 665C      		bne fail_moveBall_test
+ 470 0226 0081 0F00 		or.l #$0F000000,d1	
+ 470      0000 
+ 471               	
+ 472 022c 143C 0020 		move.b #%00100000,d2
+ 473 0230 4EBA FE7E 		jsr moveBall
+ 474 0234 0C02 0040 		cmp.b  #%01000000,d2
+ 475 0238 6648      		bne fail_moveBall_test
+ 476 023a 0081 00F0 		or.l #$00F00000,d1
+ 476      0000 
+ 477               	
+ 478               		;;right
+ 479 0240 3A3C 00FF 		move #$FF,d5
+ 480 0244 143C 0001 		move.b #%00000001,d2
+ 481 0248 4EBA FE66 		jsr moveBall
+ 482 024c 0C02 0000 		cmp.b  #%00000000,d2
+ 483 0250 6630      		bne fail_moveBall_test
+ 484 0252 0081 000F 		or.l #$000F0000,d1	
+ 484      0000 
+ 485               	
+ 486 0258 143C 0080 		move.b #%10000000,d2
+ 487 025c 4EBA FE52 		jsr moveBall
+ 488 0260 0C02 0040 		cmp.b  #%01000000,d2
+ 489 0264 661C      		bne fail_moveBall_test
+68K GAS  ./pingis.s 			page 10
+
+
+ 490 0266 0081 0000 		or.l #$0000F000,d1	
+ 490      F000 
+ 491               	
+ 492 026c 143C 0020 		move.b #%00100000,d2
+ 493 0270 4EBA FE3E 		jsr moveBall
+ 494 0274 0C02 0010 		cmp.b  #%00010000,d2
+ 495 0278 6608      		bne fail_moveBall_test
+ 496 027a 0081 0000 		or.l #$00000FFF,d1
+ 496      0FFF 
+ 497 0280 4E75      		rts
+ 498               	fail_moveBall_test:
+ 499 0282 4EBA 0306 		jsr failTest
+ 500 0286 4E75      		rts
+ 501               		
+ 502               	isOut_test
+ 503 0288 143C 0001 		move.b #%00000001,d2
+ 504 028c 4EBA FE36 		jsr isOut
+ 505 0290 0C01 0000 		cmp.b  #$00,d1 		;simulate not outside
+ 506 0294 661C      		bne fail_out?_test
+ 507 0296 0081 F000 		or.l #$F0000000,d1
+ 507      0000 
+ 508               	
+ 509 029c 143C 0000 		move.b #%00000000,d2
+ 510 02a0 4EBA FE22 		jsr isOut
+ 511 02a4 0C01 00FF 		cmp.b  #$FF,d1
+ 512 02a8 6608      		bne fail_out?_test
+ 513 02aa 0081 FFFF 		or.l #$FFFFFFFF,d1
+ 513      FFFF 
+ 514 02b0 4E75      		rts
+ 515               	fail_out?_test:
+ 516 02b2 4EBA 02D6 		jsr failTest
+ 517 02b6 4E75      		rts
+ 518               		
+ 519               	score_test
+ 520               		;;right player shall get point	
+ 521 02b8 183C 0000 		move.b #$00,d4
+ 522 02bc 1A3C 0000 		move.b #$00,d5
+ 523 02c0 4EBA FE14 		jsr score
+ 524 02c4 0C04 0001 		cmp.b #1,d4
+ 525 02c8 6620      		bne fail_score_test
+ 526 02ca 0081 FFFF 		or.l #$FFFF0000,d1
+ 526      0000 
+ 527               		
+ 528               		;;left player shall get point	
+ 529 02d0 163C 0000 		move.b #$00,d3
+ 530 02d4 1A3C 00FF 		move.b #$FF,d5
+ 531 02d8 4EBA FDFC 		jsr score
+ 532 02dc 0C03 0001 		cmp.b #$1,d3
+ 533 02e0 6608      		bne fail_score_test
+ 534 02e2 0081 FFFF 		or.l #$FFFFFFFF,d1
+ 534      FFFF 
+ 535 02e8 4E75      		rts
+ 536               	fail_score_test
+ 537 02ea 4EBA 029E 		jsr failTest
+ 538 02ee 4E75      		rts
+ 539               	
+ 540               	pointRight_test
+68K GAS  ./pingis.s 			page 11
+
+
+ 541 02f0 183C 0000 		move.b #$00,d4
+ 542 02f4 4EBA FDF2 		jsr pointRight
+ 543 02f8 0C04 0001 		cmp.b #$01,d4
+ 544 02fc 6608      		bne fail_pointRight_test
+ 545 02fe 0081 FFFF 		or.l #$FFFFFFFF,d1
+ 545      FFFF 
+ 546 0304 4E75      		rts
+ 547               	fail_pointRight_test:
+ 548 0306 4EBA 0282 		jsr failTest
+ 549 030a 4E75      		rts
+ 550               		
+ 551               	pointLeft_test
+ 552 030c 163C 0000 		move.b #$00,d3
+ 553 0310 4EBA FDDA 		jsr pointLeft
+ 554 0314 0C03 0001 		cmp.b #$01,d3
+ 555 0318 6608      		bne fail_pointLeft_test
+ 556 031a 0081 FFFF 		or.l #$FFFFFFFF,d1
+ 556      FFFF 
+ 557 0320 4E75      		rts
+ 558               	fail_pointLeft_test:
+ 559 0322 4EBA 0266 		jsr failTest
+ 560 0326 4E75      		rts
+ 561               	
+ 562               	;;; todo implement
+ 563               	newServe_test
+ 564 0328 4EBA FDC6 		jsr newServe
+ 565 032c 4E75      		rts
+ 566               	fail_newServe_test
+ 567               		
+ 568               	newServeLeft_test
+ 569 032e 143C 0020 		move.b #%00100000,d2	
+ 570 0332 1C3C 0000 		move.b #$00,D6
+ 571 0336 1A3C 0000 		move.b #$00,D5
+ 572 033a 4EBA FDC6 		jsr newServeLeft
+ 573 033e 0C02 0080 		cmp.b #%10000000,D2
+ 574 0342 6620      		bne fail_newServeLeft_test
+ 575 0344 0081 FFFF 		or.l #$FFFF0000,d1
+ 575      0000 
+ 576 034a 0C06 00FF 		cmp.b #$FF,d6
+ 577 034e 6614      		bne fail_newServeLeft_test
+ 578 0350 0081 000F 		or.l #$000FFF00,d1
+ 578      FF00 
+ 579 0356 0C05 00FF 		cmp.b #$FF,d5
+ 580 035a 6608      		bne fail_newServeLeft_test
+ 581 035c 0081 0000 		or.l #$000000FF,d1
+ 581      00FF 
+ 582 0362 4E75      		rts
+ 583               	fail_newServeLeft_test:	
+ 584 0364 4EBA 0224 		jsr failTest
+ 585 0368 4E75      		rts
+ 586               		
+ 587               	newServeRight_test
+ 588 036a 143C 0040 		move.b #%01000000,d2	
+ 589 036e 1C3C 0000 		move.b #$00,D6
+ 590 0372 1A3C 00FF 		move.b #$FF,D5
+ 591 0376 4EBA FD98 		jsr newServeRight
+ 592 037a 0C02 0001 		cmp.b #%00000001,D2
+68K GAS  ./pingis.s 			page 12
+
+
+ 593 037e 6620      		bne fail_newServeRight_test
+ 594 0380 0081 FFF0 		or.l #$FFF00000,d1
+ 594      0000 
+ 595 0386 0C06 00FF 		cmp.b #$FF,d6
+ 596 038a 6614      		bne fail_newServeRight_test
+ 597 038c 0081 000F 		or.l #$000FFF00,d1
+ 597      FF00 
+ 598 0392 0C05 0000 		cmp.b #$00,d5
+ 599 0396 6608      		bne fail_newServeRight_test
+ 600 0398 0081 0000 		or.l #$000000FF,d1	
+ 600      00FF 
+ 601 039e 4E75      		rts
+ 602               	fail_newServeRight_test:	
+ 603 03a0 4EBA 01E8 		jsr failTest
+ 604 03a4 4E75      		rts
+ 605               		
+ 606               	turnServeOff_test
+ 607 03a6 3C3C 00FF 		move #$FF,D6
+ 608 03aa 4EBA FDD2 		jsr turnServeOff
+ 609 03ae 0C06 0000 		cmp.b #$00,D6
+ 610 03b2 6608      		bne fail_turnServeOff_test
+ 611 03b4 0081 FFFF 		or.l #$FFFFFFFF,D1
+ 611      FFFF 
+ 612 03ba 4E75      		rts
+ 613               	fail_turnServeOff_test
+ 614 03bc 4EBA 01CC 		jsr failTest
+ 615 03c0 4E75      		rts
+ 616               	
+ 617               	;;----------------------------------------------------------------------
+ 618               	;; 
+ 619               	;; Test flaggs point, direction and servesstatus
+ 620               	;; note for now this require rte to be changed temporarily to rts
+ 621               	;; 
+ 622               	;;----------------------------------------------------------------------
+ 623               	;; 
+ 624               	leftButton_test
+ 625 03c2 4EBA FD8A 		jsr leftButton
+ 626               		;;set testresult register to 0 
+ 627 03c6 7000      		move.l #$00,d0
+ 628 03c8 7200      		move.l #$00,d1
+ 629               		;;i position
+ 630 03ca 4EBA 019A 		jsr setBallInPositionLeft
+ 631 03ce 4EBA FD7E 		jsr leftButton
+ 632 03d2 0C04 0000 		cmp.b #$00,d4
+ 633 03d6 666C      		bne fail_left_button_test
+ 634 03d8 0081 F000 		or.l #$F0000000,D1
+ 634      0000 
+ 635               		
+ 636 03de 0C05 00FF 		cmp.b #$FF,d5
+ 637 03e2 6660      		bne fail_left_button_test
+ 638 03e4 0081 0F00 		or.l #$0F000000,D1
+ 638      0000 
+ 639               	
+ 640 03ea 0C06 0000 		cmp.b #$00,d6
+ 641 03ee 6654      		bne fail_left_button_test
+ 642 03f0 0081 00F0 		or.l #$00F00000,D1
+ 642      0000 
+68K GAS  ./pingis.s 			page 13
+
+
+ 643               		;; samma test men står i servläge
+ 644 03f6 4EBA 016E 		jsr setBallInPositionLeft
+ 645 03fa 3C3C 00FF 		move #$FF,D6
+ 646 03fe 4EBA FD4E 		jsr leftButton
+ 647 0402 0C04 0000 		cmp.b #$00,d4	
+ 648 0406 663C      		bne fail_left_button_test
+ 649 0408 0081 000F 		or.l #$000F0000,D1
+ 649      0000 
+ 650               		
+ 651 040e 0C05 00FF 		cmp.b #$FF,d5
+ 652 0412 6630      		bne fail_left_button_test
+ 653 0414 0081 0000 		or.l #$0000F000,D1
+ 653      F000 
+ 654               	
+ 655 041a 0C06 0000 		cmp.b #$00,d6
+ 656 041e 6624      		bne fail_left_button_test
+ 657 0420 0081 0000 		or.l #$00000FFF,D1
+ 657      0FFF 
+ 658               		;;if ball is not in position
+ 659 0426 4EBA 0150 		jsr setBallNotInPositionLeft
+ 660 042a 4EBA FD22 		jsr leftButton
+ 661 042e 4EBA 001A 		jsr leftButtonNotInPosLeft_test
+ 662               		;;ball is moving in oppisitons direction we take a swing
+ 663 0432 4EBA 0144 		jsr setBallNotInPositionLeft
+ 664 0436 1A3C 00FF 		move.b #$FF,d5
+ 665 043a 4EBA FD12 		jsr leftButton
+ 666 043e 4EBA 0036 		jsr leftButtonTakeSwing_test
+ 667 0442 4E75      		rts
+ 668               	fail_left_button_test:
+ 669 0444 4EBA 0144 		jsr failTest
+ 670 0448 4E75      		rts
+ 671               	
+ 672               	leftButtonNotInPosLeft_test
+ 673 044a 0C04 0001 		cmp.b #$01,d4
+ 674 044e 6620      		bne fail_left_button_test_test
+ 675 0450 0080 F000 		or.l #$F0000000,D0
+ 675      0000 
+ 676 0456 0C05 0000 		cmp.b #$00,d5
+ 677 045a 6614      		bne fail_left_button_test_test
+ 678 045c 0080 0F00 		or.l #$0F000000,D0
+ 678      0000 
+ 679 0462 0C06 00FF 		cmp.b #$FF,d6
+ 680 0466 6608      		bne fail_left_button_test_test
+ 681 0468 0080 00F0 		or.l #$00F00000,D0
+ 681      0000 
+ 682 046e 4E75      		rts
+ 683               	fail_left_button_test_test:
+ 684 0470 103C 0000 		move.b #$00,D0
+ 685 0474 4E75      		rts
+ 686               		
+ 687               	leftButtonTakeSwing_test
+ 688 0476 0C04 0001 		cmp.b #$01,d4
+ 689 047a 6620      		bne fail_leftButtonTakeSwing_test
+ 690 047c 0080 000F 		or.l #$000F0000,D0
+ 690      0000 
+ 691 0482 0C05 0000 		cmp.b #$00,d5
+ 692 0486 6614      		bne fail_leftButtonTakeSwing_test 
+68K GAS  ./pingis.s 			page 14
+
+
+ 693 0488 0080 0000 		or.l #$0000F000,D0
+ 693      F000 
+ 694 048e 0C06 00FF 		cmp.b #$FF,d6
+ 695 0492 6608      		bne fail_leftButtonTakeSwing_test 
+ 696 0494 0080 0000 		or.l #$00000FFF,D0
+ 696      0FFF 
+ 697 049a 4E75      		rts
+ 698               	fail_leftButtonTakeSwing_test:	
+ 699 049c 103C 0000 		move.b #$00,D0
+ 700 04a0 4E75      		rts
+ 701               	
+ 702               	;;----------------------------------------------------------------------
+ 703               	rightButton_test
+ 704               		;;set testresult register to 0 
+ 705 04a2 7000      		move.l #$00,d0
+ 706 04a4 7200      		move.l #$00,d1
+ 707               		;;i position
+ 708 04a6 4EBA 009A 		jsr setBallInPositionRight
+ 709 04aa 4EBA FC72 		jsr rightButton
+ 710 04ae 0C03 0000 		cmp.b #$00,d3
+ 711 04b2 665C      		bne fail_rightButton_test
+ 712 04b4 0081 F000 		or.l #$F0000000,D1
+ 712      0000 
+ 713               		
+ 714 04ba 0C05 0000 		cmp.b #$00,d5
+ 715 04be 6650      		bne fail_rightButton_test
+ 716 04c0 0081 0F00 		or.l #$0F000000,D1
+ 716      0000 
+ 717               	
+ 718 04c6 0C06 0000 		cmp.b #$00,d6
+ 719 04ca 6644      		bne fail_rightButton_test
+ 720 04cc 0081 00F0 		or.l #$00F00000,D1
+ 720      0000 
+ 721               		;; samma test men står i servläge
+ 722 04d2 4EBA 006E 		jsr setBallInPositionRight
+ 723 04d6 3C3C 00FF 		move #$FF,D6
+ 724 04da 4EBA FC42 		jsr rightButton
+ 725 04de 0C03 0000 		cmp.b #$00,d3	
+ 726 04e2 662C      		bne fail_rightButton_test
+ 727 04e4 0081 000F 		or.l #$000F0000,D1
+ 727      0000 
+ 728               		
+ 729 04ea 0C05 0000 		cmp.b #$00,d5
+ 730 04ee 6620      		bne fail_rightButton_test
+ 731 04f0 0081 0000 		or.l #$0000F000,D1
+ 731      F000 
+ 732               	
+ 733 04f6 0C06 0000 		cmp.b #$00,d6
+ 734 04fa 6614      		bne fail_rightButton_test
+ 735 04fc 0081 0000 		or.l #$00000FFF,D1
+ 735      0FFF 
+ 736               		;;if ball is not in position
+ 737 0502 4EBA 0050 		jsr setBallNotInPositionRight
+ 738 0506 4EBA FC16 		jsr rightButton
+ 739 050a 4EBA 000A 		jsr rightButtonNotInPosRight_test
+ 740 050e 4E75      		rts
+ 741               	fail_rightButton_test:
+68K GAS  ./pingis.s 			page 15
+
+
+ 742 0510 4EBA 0078 		jsr failTest
+ 743 0514 4E75      		rts
+ 744               	
+ 745               	rightButtonNotInPosRight_test
+ 746 0516 0C03 0001 		cmp.b #$01,d3
+ 747 051a 6620      		bne fail_rightButton_test_test
+ 748 051c 0080 F000 		or.l #$F0000000,D0
+ 748      0000 
+ 749 0522 0C05 00FF 		cmp.b #$FF,d5
+ 750 0526 6614      		bne fail_rightButton_test_test
+ 751 0528 0080 0F00 		or.l #$0F000000,D0
+ 751      0000 
+ 752 052e 0C06 00FF 		cmp.b #$FF,d6
+ 753 0532 6608      		bne fail_rightButton_test_test
+ 754 0534 0080 00FF 		or.l #$00FFFFFF,D0
+ 754      FFFF 
+ 755 053a 4E75      		rts
+ 756               	fail_rightButton_test_test:
+ 757 053c 103C 0000 		move.b #$00,D0
+ 758 0540 4E75      		rts
+ 759               		
+ 760               	;;----------------------------------------------------------------------
+ 761               	;; helper functions for testing
+ 762               	;;----------------------------------------------------------------------
+ 763               	;;
+ 764               	setBallInPositionRight
+ 765 0542 143C 0001 		move.b #%00000001,d2
+ 766 0546 163C 0000 		move.b #$00,d3
+ 767 054a 1A3C 00FF 		move.b #$FF,d5
+ 768 054e 1C3C 0000 		move.b #$00,d6
+ 769 0552 4E75      		rts
+ 770               	setBallNotInPositionRight
+ 771 0554 143C 0020 		move.b #%00100000,d2
+ 772 0558 163C 0000 		move.b #$00,d3
+ 773 055c 1A3C 0000 		move.b #$00,d5
+ 774 0560 1C3C 0000 		move.b #$00,d6
+ 775 0564 4E75      		rts
+ 776               	setBallInPositionLeft
+ 777 0566 143C 0080 		move.b #%10000000,d2
+ 778 056a 183C 0000 		move.b #$00,d4
+ 779 056e 1A3C 0000 		move.b #$00,d5
+ 780 0572 1C3C 00FF 		move.b #$FF,d6
+ 781 0576 4E75      		rts
+ 782               	
+ 783               	setBallNotInPositionLeft
+ 784 0578 143C 0010 		move.b #%00010000,d2
+ 785 057c 183C 0000 		move.b #$00,d4
+ 786 0580 1A3C 0000 		move.b #$00,d5
+ 787 0584 1C3C 0000 		move.b #$00,d6
+ 788 0588 4E75      		rts
+ 789               	failTest
+ 790 058a 123C 0000 		move.b #$00,d1
+ 791 058e 4E75      		rts
+ 792               		
+ 793               	
+ 794               		

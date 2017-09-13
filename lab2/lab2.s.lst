@@ -1,0 +1,397 @@
+68K GAS  ./lab2.s 			page 1
+
+
+   1               	;;----------------------------------------------------------------------
+   2               	;; Partitioning of addresspace
+   3               	;; In use $900-$7000. Note $2000-$2500 reserverd for preprogrammed 
+   4               	;; subroutines.
+   5               	;; suggestion is to use 1000 1100 1200 ... etc for your
+   6               	;; own subroutines in assignment 1 
+   7               	;; 
+   8               	;; $1000 	: start (pc at start)
+   9               	;; $7000	:suggested top of stack
+  10               	;;----------------------------------------------------------------------
+  11               	;; Given sobroutines
+  12               	;; 
+  13               	;; $20EC PINIT 
+  14               	;;   	 sets PA7-PA0,PB7-PB0 as out, CA1,CA2,CB1,CB2 
+  15               	;; 	 programmed to interput on positive (flank:-)
+  16               	;;
+  17               	;; $2020  SKABAK
+  18               	;; 	  Prints to terminal BAKGRUNDSPROGRAM to the left.
+  19               	;; 
+  20               	;; $2048 SKAVV
+  21               	;;  	 Prints to center of the terminal (1s intervall)
+  22               	;;       AVBROTT vänster 
+  23               	;;	 *
+  24               	;;	 *
+  25               	;;	 *
+  26               	;;	 *	 
+  27               	;;	 SLUT vänster
+  28               	;;  	 soubroutin asummes interupt level 2
+  29               	;;
+  30               	;; $20A6 SKAVH
+  31               	;;  	 Prints to the right hand side of the terminal
+  32               	;;       AVBROTT höger 
+  33               	;;	 *
+  34               	;;	 *
+  35               	;;	 *
+  36               	;;	 *	 
+  37               	;;	 SLUT höger
+  38               	;;  	 soubroutin asummes interupt level 5 
+  39               	;;
+  40               	;; $2000 DELAY
+  41               	;; 	 delay takes param in D0 interpeted as ms
+  42               	;;
+  43               	;;----------------------------------------------------------------------
+  44               	;; 	
+  45               	;; Cheet sheet 	
+  46               	;; 	
+  47               	;;  C300 SKYFFLA  	
+  48               	;;  20EC PINIT
+  49               	;;  $2020 SKBAK	
+  50               	;;  $2048 SKAVV 	
+  51               	;;  $20A6 SKAVH	
+  52               	;;  $2000 DELAY
+  53               	;; 
+  54               	;;  CB = IRQB =I1 =IRQ2 = interruptlevel 2 = interuptvector @$68 = Interuptroutine @$1100
+  55               	;;  CA = IRQA =I0/2 = IRQ5 = interruptlevel 5 = interuptvector @$74 = Interuptroutine @$1200
+  56               	;;  IRQ7 = black button always get priority
+  57               	;;
+68K GAS  ./lab2.s 			page 2
+
+
+  58               	;;   Above in short CB generats interuppt at level2. Which looks upp its routine-address at $68
+  59               	;;   Above in short CA generats interuppt at level5. Which looks upp its routine-address at $74
+  60               	;; 
+  61               	;;   SR=2700 pay attention to what happens to 7 that number setting IPL0-3
+  62               	;;   (bits 8,9,10 in SR )
+  63               	;;  
+  64               	;;   External signal CA1 sets CRA7
+  65               	;;   External signal CA2 sets CRA6
+  66               	;;   These are automatically reset when we read PIAA    
+  67               	;;
+  68               	;;   When interuppt occurs SR and PC are pushed on stack. 
+  69               	;;   When returning from interuppt PC and SR are reset.
+  70               	;;   Implication of this is that the INTERUPTLEVEL IS RESET
+  71               	;;   to it's previous level when returning from interuppt
+  72               	;;   since interupptlevel is indicated in SR I0-2
+  73               	;;  
+  74               	;;  
+  75               	;;  
+  76               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  77               	;;   ------------------------------------------------ :SR  
+  78               	;;  | T|  | S|  |  |I2|I1|I0|  |  |  |X |N |Z |V |C |  
+  79               	;;   ------------------------------------------------
+  80               	;;  
+  81               	;;
+  82               	;;   7  6  5  4  3  2  1  0
+  83               	;;   ------------------------ :CRA      $10080 data direction A (bit 2 in CRA=0)
+  84               	;;  |  |  |  |  |  |  |  |  |           $10080 PIAA dataregister A (bit 2 in CRA=1)
+  85               	;;   ------------------------           $10084 CRA Cotntrol register A
+  86               	;;  ------ -------- -- -----            $10082 data direction B
+  87               	;;    |        |     |   |Styr CA1      $10082 data PIAB dataregister B
+  88               	;;    |        |     |                  $10086 CRB Control register B
+  89               	;;    |        |     |0:DDRA
+  90               	;;    |        |     |1:PIAA
+  91               	;;    |        |
+  92               	;;    |        |styr CA2
+  93               	;;    |
+  94               	;;    |signalflaggor
+  95               	;;     avbrott
+  96               	;;
+  97               	;;
+  98               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  99               	;;   ------------------------------------------------
+ 100               	;;  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+ 101               	;;   ------------------------------------------------
+ 102               	;;   
+ 103               	;;-----------------------------------------------------------------------
+ 104               	;;
+ 105               	;;jsr  $C300			för att skyffla 
+ 106               		;;  ($1000-$1036 1040 with trap instruction ) 
+ 107               	INIT      
+ 108 0000 4FF8 7000 		lea $7000,A7	       	; set stackpointer
+ 109 0004 4EB9 0000 		jsr PINIT	       	; initiat pia $20EC
+ 109      0000 
+ 110 000a 21FC 0000 		move.L #$1100,$068     	; interruptvector for irq-level 2
+ 110      1100 0068 
+ 111 0012 21FC 0000 		move.L #$1200,$074     	; interruptvector for irq-level 5
+ 111      1200 0074 
+68K GAS  ./lab2.s 			page 3
+
+
+ 112               					; set IPL0/2=1 IPL1=1 interrupt level0 interupt mask
+ 113               		 			; these are found in sr bit 10,9,8
+ 114               					; according to manual these are reset at a read of pia datareg
+ 115               					; AND.W #data,SR  as priviliged operation
+ 116 001a 4A39 0001 		tst.b $10080		;nollställ interupt ca1
+ 116      0080 
+ 117 0020 4A39 0001 		tst.b $10082		;nollställ interupt cb1	
+ 117      0082 
+ 118 0026 46FC 2000 		move.w #$2000,SR	;change to and at some point	
+ 119               	UPPGIFT1
+ 120 002a 4EB9 0000 		jsr SKBAK      		;$2020
+ 120      0000 
+ 121 0030 203C 0000 		MOVE.L #1000,D0
+ 121      03E8 
+ 122 0036 4EB9 0000 		jsr DELAY      		;$2000
+ 122      0000 
+ 123 003c 4EFA FFEC 		jmp UPPGIFT1 		;$1028
+ 124               	
+ 125               	;;UPPGIFT2			;$1100
+ 126               	;;	tst.b 10082		;funkar tst här (utgång) behöver
+ 127               	;;	jsr SKAVV		;$2048
+ 128               	;;	rte			;behöver ipl0-2
+ 129               	;;
+ 130               	;;				
+ 131               	;;	tst.b 10080		;$1200
+ 132               	;;	jsr SKAVH		;$20A6
+ 133               	;;	rte 			;återställer sr och pc behöver hantera separat
+ 134               	;; 
+ 135               	;;-----------------------------------------------------------------------
+ 136               	;;
+ 137               	;; Avbrottsförförfrågan på nivå 2(irqa b?) tas emot av processorn men. Men
+ 138               	;; men har inte tillräcklig hög "nivå" för att avbryta avbrottsrutinen på
+ 139               	;; nivå 5 
+ 140               	;;
+ 141               	;; AVBROTT v{nster
+ 142               	;;           *
+ 143               	;;           *
+ 144               	;;           *
+ 145               	;;                          AVBROTT h|ger
+ 146               	;;                                 *
+ 147               	;;                                 *
+ 148               	;;                                 *
+ 149               	;;                                 *
+ 150               	;;                                 *
+ 151               	;;                             SLUT h|ger
+ 152               	;;                          AVBROTT h|ger
+ 153               	;;                                 *
+ 154               	;;                                 *
+ 155               	;;                                 *
+ 156               	;;                                 *
+ 157               	;;                                 *
+ 158               	;;                             SLUT h|ger
+ 159               	;;           *
+ 160               	;;           *
+ 161               	;;       SLUT v{nster
+ 162               	;;    AVBROTT v{nster
+ 163               	;;           *
+68K GAS  ./lab2.s 			page 4
+
+
+ 164               	;;           *
+ 165               	;;           *
+ 166               	;;           *
+ 167               	;;           *
+ 168               	;;      SLUT v{nster
+ 169               	;;
+ 170               	;;-----------------------------------------------------------------------
+ 171               	;; uppgift 3
+ 172               	;; Under utskriften av av bakgrundsprogram kan vi höj avbrottsnivån till  
+ 173               	;; nivå 7. Dvs vi låser körningen kring then kritiska sektionen 
+ 174               	;;
+ 175               	;; dvs abortknappen har IRQ7 men går alltid igenom den får specialbehandling
+ 176               	;; för att systemet enkelst skall kunna avbrytas utan att det hänger sig
+ 177               	;; på nivå 7
+ 178               	;;-----------------------------------------------------------------------
+ 179               	;;UPPGIFT3
+ 180               	;;	move.w #$2700,SR	;set level to 7
+ 181               	;;	jsr SKBAK      		;$2020
+ 182               	;;	move.w #$2000,SR	;reset ir level use and instead
+ 183               	;;	MOVE.L #1000, D0
+ 184               	;;	jsr DELAY      		;$2000
+ 185               	;;	jmp UPPGIFT1 		;$1028
+ 186               	;;
+ 187               	;;set_ir_level 7 			;($1300)
+ 188               	;;	OR.W #$0700,SR 	         ;mask interrupt to level 7
+ 189               	;;	rts 
+ 190               	;;	
+ 191               	;;	move.b #255,d7
+ 192               	;;	trap #14
+ 193               	;;
+ 194               	;;-----------------------------------------------------------------------
+ 195               	;;
+ 196               	;; Svar uppgift 4 översta 4 bytesen är innehållet i d1(vad nu anropande programmet
+ 197               	;; har lagt där). Just denna gång var värdet 00 00 00 57
+ 198               	;; längst ner på stacken låg återhopps addressen 00 00 10 3E 
+ 199               	;; dvs addressen som följer efter delay anropet i huvudprogrammet.
+ 200               	;;
+ 201               	;;-----------------------------------------------------------------------
+ 202               	;;	--------------
+ 203               	;;	address | Data
+ 204               	;;	--------------		
+ 205               	;;	| 6FF8  | 00 |
+ 206               	;;	--------------	
+ 207               	;;	|   -   | 00 |  :D1-Registret
+ 208               	;;	--------------
+ 209               	;;	|   -   | 00 |
+ 210               	;;	--------------
+ 211               	;;	|   -   | 57 |
+ 212               	;;   ------------------------
+ 213               	;;	|   -   | 00 |
+ 214               	;;	--------------
+ 215               	;;	|   -   | 00 |  :Återhoppsaddress
+ 216               	;;	--------------
+ 217               	;;	|   -   | 10 |
+ 218               	;;	--------------
+ 219               	;;	| 6FFF  | 3E |
+ 220               	;;	--------------
+68K GAS  ./lab2.s 			page 5
+
+
+ 221               	;;
+ 222               	;;	
+ 223               	;;-----------------------------------------------------------------------
+ 224               	;;
+ 225               	;; Svar uppgift 5	
+ 226               	;; Stackpekarns värd 6FDC (stacken växer uppåt från 7000 hex, 36dec = 24hex
+ 227               	;; 7000-24=6FDC) Vilket också stämmer när man testkör
+ 228               	;;
+ 229               	;; Noter stacken räcknas ner sedan läggs data in uppifrån och ner
+ 230               	;;       	 BR lägger tillfälligt in felaktig instruction 4E73 
+ 231               	;;		 på den address där där "brytning" ska ske.
+ 232               	;;               När vi når brytpunkter kommer instruction återställas
+ 233               	;;               till sin ursprungs instuktion.
+ 234               	;;
+ 235               	;;-----------------------------------------------------------------------
+ 236               	;; Följande är tänkt att illustrera körning från det att backgrunprogrammet
+ 237               	;; tar vid. 1100 är vår subrutin för vänster och 1200 för höger avbrott.
+ 238               	;; 
+ 239               	;; Backgrundsprg. 
+ 240               	;;   |  
+ 241               	;;   |     .Delay
+ 242               	;;   |    /|      .1100
+ 243               	;;   |   / |     /
+ 244               	;;   |  /  |    /  |    .SKAVV 
+ 245               	;;   | /   |   /   |   / |   
+ 246               	;;   |/    |  /    |  /  |    .Delay
+ 247               	;;         | /     | /   |   / |  
+ 248               	;;         *IRQ_2  -     |  /  |    .SKAVH -BREAKPOINT
+ 249               	;; 		         | /   |   /   
+ 250               	;; 			 -     |  /  
+ 251               	;; 			       | /   
+ 252               	;; 			       *IRQ_5
+ 253               	;;---------------------------------------------------------------------- 				     
+ 254               	;;
+ 255               	;; Svar 5. Det sker inget avbrot i backgrundsprogrammet utan i delay 
+ 256               	;;         subrutinen. I vårt fall inträffade det efter att instruktionen
+ 257               	;;         på address $2002 exekverats.
+ 258               	;;         Likaså skede avbrottet på nivå 5 i Delay rutinen. Denna 
+ 259               	;;         gång å efter att insruktionen på address 2008 exekverats
+ 260               	;;         färdig och 200E skulle påbörjas. 
+ 261               	;; 
+ 262               	;; 
+ 263               	;;
+ 264               	;;
+ 265               	;;----------------------------------------------------------------------
+ 266               	;;  AT BREAKPOINT
+ 267               	;;  PC=000020A6 SR=2504=.S5..Z.. US=FFFFFFFF SS=00006FDC 
+ 268               	;;  D0=00000207 D1=00000067 D2=FFFFFF05 D3=00000012 
+ 269               	;;  D4=FFFFFFFF D5=FFFFFFFF D6=FFFFFFFF D7=FFFFFFF3 
+ 270               	;;  A0=0000C000 A1=FFFFFFFF A2=FFFFFFFF A3=FFFFFFFF 
+ 271               	;;  A4=FFFFFFFF A5=0000C181 A6=0000C181 A7=00006FDC 
+ 272               	;;  --------------------0020A6    2A7C0000C1A9         MOVE.L  #49577,A5 
+ 273               	;;  
+ 274               	;;  	
+ 275               	;;  006FDC    00 00 12 0A   22 00 00 00  20 0E 00 00   00 22 00 00  ...."... ...."..
+ 276               	;;  006FEC    20 6E 00 00   11 0A 20 00  00 00 20 08   00 00 00 3C   n.... ... ....<
+ 277               	;;  006FFC    00 00 10 3E   00 02 00 C0  04 83 10 00   00 83 00 01
+68K GAS  ./lab2.s 			page 6
+
+
+ 278               	;;  
+ 279               	;;----------------------------------------------------------------------
+ 280               	;;      --------------                                   --------------      
+ 281               	;;      address | Data			                 address | Data      
+ 282               	;;      --------------                                   --------------
+ 283               	;;      | 6FDC  | 00 | ÅTERHOPPS ADRESSEN TILL           |   -   | 00 |  JSR LÄGGER ÅTERHOPPSADD
+ 284               	;;      -------------- HÖGER-AVBROTTS-HANTERAREN	 --------------  TILL VÅR VÄNSTER-AVBROTTS-HANT
+ 285               	;;      |   -   | 00 |                                   |       | 00 |  SUBRUTIN NÄR HOPP TILL SK
+ 286               	;;      --------------                                   --------------  (SÅ HITTAR SKAVV TEBAX)  
+ 287               	;;      |   -   | 12 |                                   |       | 11 |                            
+ 288               	;;      --------------                                   --------------                            
+ 289               	;;      |   -   | 0A |                                   |   -   | 0A |                            
+ 290               	;;   ----------------------                         -----------------------                        
+ 291               	;;      |   -   | 22 | SR DÅ ANDRA AVBROTTETT            |   -   | 20 |  -SR DÅ FÖRSTA AVBROTT  
+ 292               	;;      -------------- INTRÄFFADE                        --------------   INTRÄFFADE 
+ 293               	;;      |   -   | 00 |                                   |   -   | 00 |   SR 16 BITTAR LÅNG       
+ 294               	;;   ----------------------                         ------------------------                       
+ 295               	;;      |   -   | 00 |  ÅTERHOPPSADR I DELAY             |   -   | 00 |  -ÅTERHOPPSADR TILL      
+ 296               	;;      --------------  (DÅ AVBROTT NIVÅ 5               --------------   DELAY FRÅN            
+ 297               	;;      |       | 00 |   INTRÄFFAR)                      |   -   | 00 |   (FRÅN FÖRSTA AVBROTTET
+ 298               	;;      --------------                                   --------------                            
+ 299               	;;      |   -   | 20 |                                   |   -   | 20 |  
+ 300               	;;      --------------                                   --------------    
+ 301               	;;      |   -   | 0E |                                   |       | 08 |                            
+ 302               	;;   ---------------------                           ------------------------                      
+ 303               	;;      |   -   | 00 | DELAY LÄGGER D0                   |   -   | 00 |                           
+ 304               	;;      -------------- PÅ STACKEN                        --------------                           
+ 305               	;;      |       | 00 |                                   |   -   | 00 |                            
+ 306               	;;      --------------                                   --------------                            
+ 307               	;;      |   -   | 00 |                                   |   -   | 00 |  -DELAY LAGRAR D0 PÅ STACK
+ 308               	;;      --------------                                   --------------                            
+ 309               	;;      |   -   | 22 |                                   |    -  | 3C |                            
+ 310               	;;   ----------------------                           ------------------------                     
+ 311               	;;      |   -   | 00 |  ÅTERHOPPS ADDRESS                |  6FFC | 00 |                           
+ 312               	;;      --------------  TIILL PUNKT I SKAVV              --------------                            
+ 313               	;;      |   -   | 00 |  (SKAVV GÖR SUBRUTINS             |   -   | 00 |                           
+ 314               	;;      --------------   HOPP TILL DELAY)                --------------                            
+ 315               	;;      | 6FEC  | 20 |                                   |   -   | 10 | -ÅTERHOPPS ADDRESS TILL   
+ 316               	;;      --------------                                   --------------  HUVUDPROGRAM              
+ 317               	;;      |   -   | 6E |                                   |  6FFF | 3E |                            
+ 318               	;;      --------------                               	---------------
+ 319               	;;  
+ 320               	;;-------------------------------------------------------------------------------------------------
+ 321               	;;	                                             
+ 322               	;;	                                                                   
+ 323               	;;	--------------                                 --------------      
+ 324               	;;	address | Data			               address | Data      
+ 325               	;;	--------------			               --------------          
+ 326               	;;	| 6FDC  | 00 |			               |       |    |      
+ 327               	;;	--------------			               --------------      
+ 328               	;;	|   -   | 00 |  :D1-Registret	               |   -   |    |  :D1-
+ 329               	;;	--------------			               --------------      
+ 330               	;;	|   -   | 00 |			               |   -   |    |      
+ 331               	;;	--------------			               --------------      
+ 332               	;;	|   -   | 57 |			               |   -   |    |      
+ 333               	;;   ------------------------		          ------------------------ 
+ 334               	;;	|   -   |    |			               |   -   |    |      
+68K GAS  ./lab2.s 			page 7
+
+
+ 335               	;;	--------------			               --------------      
+ 336               	;;	|   -   |    | 			               |   -   |    |      
+ 337               	;;	--------------			               --------------      
+ 338               	;;	|   -   |    |			               |   -   |    |      
+ 339               	;;	--------------			               --------------      
+ 340               	;;	|       |    |			               |       |    |      
+ 341               	;;   ------------------------		          ------------------------ 
+ 342               	;;	|   -   |    |			               |   -   |    |      
+ 343               	;;	--------------			               --------------      
+ 344               	;;	|   -   |    | 			               |   -   |    |      
+ 345               	;;	--------------			               --------------      
+ 346               	;;	|   -   |    |			               |   -   |    |      
+ 347               	;;	--------------			               --------------      
+ 348               	;;	|       |    |			               |       |    |      
+ 349               	;;   ------------------------		          ------------------------ 
+ 350               	;;	|   -   |    |			               |   -   |    |      
+ 351               	;;	--------------			               --------------      
+ 352               	;;	|   -   |    | 			               |   -   |    |      
+ 353               	;;	--------------			               --------------      
+ 354               	;;	|   -   |    |			               |   -   |    |      
+ 355               	;;	--------------			               --------------      
+ 356               	;;	|       |    |			               |       |    |      
+ 357               	;;    ------------------------		           ------------------------
+ 358               	;;	|   -   |    |			               |   -   |    |      
+ 359               	;;	--------------			               --------------      
+ 360               	;;	|   -   |    | 			               |   -   |    |      
+ 361               	;;	--------------			               --------------      
+ 362               	;;	|   -   |    |			               |   -   |    |      
+ 363               	;;	--------------			               --------------      
+ 364               	;;	|       |    |			               |       |    |      
+ 365               	;;	--------------      		               --------------      
+ 366               	;;
+ 367               	            
+ 368               	    

@@ -1,0 +1,340 @@
+68K GAS  ./digitalur.s 			page 1
+
+
+   1               	;;----------------------------------------------------------------------
+   2               	;; Partitioning of addresspace
+   3               	;;
+   4               	;; $900-903     : current time 
+   5               	;;
+   6               	;; $1000 	: start (pc at start)
+   7               	;; $7000	:suggested top of stack
+   8               	;;----------------------------------------------------------------------
+   9               	;; Cheet sheet 	
+  10               	;; 	
+  11               	;;  C300 SKYFFLA  	
+  12               	;;  20EC PINIT
+  13               	;;  $2020 SKBAK	
+  14               	;;  $2048 SKAVV 	
+  15               	;;  $20A6 SKAVH	
+  16               	;;  $2000 DELAY
+  17               	;; 
+  18               	;;  CB = IRQB =I1 =IRQ2 = interruptlevel 2 = interuptvector @$68 = Interuptroutine @$1100
+  19               	;;  CA = IRQA =I0/2 = IRQ5 = interruptlevel 5 = interuptvector @$74 = Interuptroutine @$1200
+  20               	;;  IRQ7 = black button always get priority
+  21               	;;
+  22               	;;   Above in short CB generats interuppt at level2. Which looks upp its routine-address at $68
+  23               	;;   Above in short CA generats interuppt at level5. Which looks upp its routine-address at $74
+  24               	;; 
+  25               	;;   SR=2700 pay attention to what happens to 7 that number setting IPL0-3
+  26               	;;   (bits 8,9,10 in SR )
+  27               	;;  
+  28               	;;   External signal CA1 sets CRA7
+  29               	;;   External signal CA2 sets CRA6
+  30               	;;   These are automatically reset when we read PIAA    
+  31               	;;
+  32               	;;   When interuppt occurs SR and PC are pushed on stack. 
+  33               	;;   When returning from interuppt PC and SR are reset.
+  34               	;;   Implication of this is that the INTERUPTLEVEL IS RESET
+  35               	;;   to it's previous level when returning from interuppt
+  36               	;;   since interupptlevel is indicated in SR I0-2
+  37               	;;  
+  38               	;;  
+  39               	;;  
+  40               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  41               	;;   ------------------------------------------------ :SR  
+  42               	;;  | T|  | S|  |  |I2|I1|I0|  |  |  |X |N |Z |V |C |  
+  43               	;;   ------------------------------------------------
+  44               	;;  
+  45               	;;
+  46               	;;   7  6  5  4  3  2  1  0
+  47               	;;   ------------------------ :CRA      $10080 data direction A (bit 2 in CRA=0)
+  48               	;;  |  |  |  |  |  |  |  |  |           $10080 PIAA dataregister A (bit 2 in CRA=1)
+  49               	;;   ------------------------           $10084 CRA Cotntrol register A
+  50               	;;  ------ -------- -- -----            $10082 data direction B
+  51               	;;    |        |     |   |Styr CA1      $10082 data PIAB dataregister B
+  52               	;;    |        |     |                  $10086 CRB Control register B
+  53               	;;    |        |     |0:DDRA
+  54               	;;    |        |     |1:PIAA
+  55               	;;    |        |
+  56               	;;    |        |styr CA2
+  57               	;;    |
+68K GAS  ./digitalur.s 			page 2
+
+
+  58               	;;    |signalflaggor
+  59               	;;     avbrott
+  60               	;;
+  61               	;;
+  62               	;;   15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+  63               	;;   ------------------------------------------------
+  64               	;;  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  
+  65               	;;   ------------------------------------------------
+  66               	;;
+  67               	;; A0: Base address of constant table (bitpatterns for 7 led seg) 
+  68               	;; A1: Address part of time thats in turn to be displayed
+  69               	;; D0: 
+  70               	;;
+  71               	;;-----------------------------------------------------------------------
+  72               	;;
+  73               	START
+  74 0000 4FF8 7000 		lea $07000,A7
+  75 0004 4EBA 0012 		jsr PIAINIT
+  76 0008 4EBA 0048 		jsr TIMEINIT
+  77 000c 4EBA 0144 		jsr MAIN
+  78 0010 1E3C 00FF 		move.b #255,d7 ;;avsluta programmet och dumpa alla register med
+  79 0014 4E4E      		trap #14
+  80 0016 4E75      		rts
+  81               	
+  82               	;;
+  83               	;;--------------------------------------------------------------------
+  84               	;;
+  85               	;; Sets up pia in th following manner
+  86               	;; PIA A0-A6 as out (used for number display)
+  87               	;; PIA A7 in (not used) 
+  88               	;; PIA B0-B1 as out (used for multiplexing segments of display) 
+  89               	;; CA1 as in external interupt
+  90               	;; CB1 as in external interupt
+  91               	;;----------------------------------------------------------------------
+  92               	;;
+  93               	PIAINIT
+  94 0018 4239 0001 		clr.b $10084	 ;CRA DDRA, CA1=IRQ:s not put throught to cpu
+  94      0084 
+  95 001e 4239 0001 		clr.b $10086 	 ;CRB DDRB, CB1=IRQ:s not put throught to cpu
+  95      0086 
+  96 0024 13FC 007F 		move.b #127,$10080	;PIAA A0-A6 out A7 in 
+  96      0001 0080 
+  97 002c 13FC 0003 		move.b #3,$10082	;PIAB B0-B1 out B2-B7 in 
+  97      0001 0082 
+  98 0034 13FC 001F 		move.b #31,$10084	;CRA, PIAA, CA active, trigger on 0->1
+  98      0001 0084 
+  99 003c 13FC 001F 		move.b #31,$10086	;CRB, PIAB, CB active, trigger on 0->1
+  99      0001 0086 
+ 100 0044 4A39 0001 		tst.b  $10080           ;reset the aknowledge 
+ 100      0080 
+ 101 004a 4A39 0001 		tst.b  $10082		;reset the aknowledge
+ 101      0082 
+ 102 0050 4E75      		rts
+ 103               	
+ 104               	TIMEINIT
+ 105               		;;Spärra för avbrot även här inga avbrott under initiering tack
+ 106 0052 21FC 0000 		move.l #DISPLAYTIME,$068;irq2
+68K GAS  ./digitalur.s 			page 3
+
+
+ 106      0000 0068 
+ 107 005a 21FC 0000 		move.l #TICK,$074 	;irq5
+ 107      0000 0074 
+ 108 0062 42B8 0900 		clr.l $900 		;clear memory in 900-903
+ 109               		;; 	move.l #$01020304,$900	;clear memory in 900-903
+ 110 0066 4280      		clr.l d0		;clear registers
+ 111 0068 4281      		clr.l d1
+ 112 006a 43F8 0900 		lea $900,A1
+ 113 006e 027C F8FF 		and.w #$F8FF,SR		;set interuppt-level 0
+ 114 0072 4E75      		rts
+ 115               	;;
+ 116               	;;----------------------------------------------------------------------
+ 117               	;; Prints out time to the LED-display
+ 118               	;;
+ 119               	;; Individual numbers are stored at $900-$903 where LSB is $900
+ 120               	;; so for instanse the time 06:34 would be mapped in memory as (32-bits)
+ 121               	;;
+ 122               	;;
+ 123               	;;   $903        $900  4X8=32bits
+ 124               	;;   -----------------
+ 125               	;;   | 0 | 6 | 3 | 4 |
+ 126               	;;   -----------------
+ 127               	;;   
+ 128               	;;  In: A1 address to current decimal to be displayed
+ 129               	;;  	A0 address to base of table containing bitpattern 
+ 130               	;;	   that represent number in 7 segment led.
+ 131               	;;
+ 132               	;;----------------------------------------------------------------------
+ 133               	;;
+ 134               	DISPLAYTIME
+ 135 0074 4A39 0001 		tst.b $10082
+ 135      0082 
+ 136               		;; and #$2700,SR
+ 137 007a 5289      		add.l #1,A1 		;hmmm error can't
+ 138 007c B3FC 0000 		cmp.l #$904,A1 		;todo 903
+ 138      0904 
+ 139 0082 6606      		bne notlast_displaytime 
+ 140 0084 227C 0000 		move.l #$900,A1
+ 140      0900 
+ 141               	notlast_displaytime
+ 142 008a 1011      		move.b (a1),d0
+ 143 008c 4EBA 000C 		jsr SETSEGMENTTODISPLAY ;Think of a better name
+ 144 0090 4EBA 0018 		jsr GET7SEGNR		;
+ 145 0094 4EBA 0024 		jsr PUTTODISPLAY	;
+ 146 0098 4E73      		rte
+ 147               	
+ 148               	;;----------------------------------------------------------------------
+ 149               	;;  
+ 150               	;; Assumes address to current time nr in A1 ($900-$903)
+ 151               	;; calculates which of the four number on the display is to be used
+ 152               	;; for output. 
+ 153               	;; A1 is destroyed
+ 154               	;;----------------------------------------------------------------------	
+ 155               	;; 
+ 156               	SETSEGMENTTODISPLAY
+ 157 009a 3609      		move a1,d3
+ 158 009c 0283 0000 		and.l #$0F,d3
+68K GAS  ./digitalur.s 			page 4
+
+
+ 158      000F 
+ 159 00a2 13C3 0001 		move.b d3,$10082
+ 159      0082 
+ 160 00a8 4E75      		rts
+ 161               	
+ 162               	;;----------------------------------------------------------------------
+ 163               	;;  
+ 164               	;; Gets bitpattern given number in D0
+ 165               	;; 
+ 166               	;;----------------------------------------------------------------------	
+ 167               	;; 
+ 168               	GET7SEGNR
+ 169 00aa 0280 0000 		and.l #$F,D0 		;Only four bites please
+ 169      000F 
+ 170 00b0 41FA 0096 		lea SJUSEGTAB,A0
+ 171 00b4 D1C0      		add.l D0,A0		;Calc address of wanted bitpattern
+ 172 00b6 1010      		move.b (a0),D0		;return bittpattern i d0
+ 173 00b8 4E75      		rts
+ 174               	;;----------------------------------------------------------------------
+ 175               	;;
+ 176               	;; pushes number to the display 
+ 177               	;; Assumes correct number in d0. 
+ 178               	;; 
+ 179               	;;----------------------------------------------------------------------	
+ 180               	;; 
+ 181               	PUTTODISPLAY
+ 182 00ba 13C0 0001 		move.b d0,$10080	
+ 182      0080 
+ 183 00c0 4E75      		rts
+ 184               	
+ 185               	;;----------------------------------------------------------------------
+ 186               	;;  
+ 187               	;; Increment time by one second this is the interuppt handler for irq5
+ 188               	;; 
+ 189               	;;----------------------------------------------------------------------	
+ 190               	;;
+ 191               	TICK
+ 192 00c2 4A39 0001 		tst.b $10080		;check wheter this is correct
+ 192      0080 
+ 193 00c8 2838 0900 		move.l $900,d4
+ 194 00cc 2A04      		move.l d4,d5
+ 195 00ce 0285 FF00 		and.l #$FF000000,d5
+ 195      0000 
+ 196 00d4 0C85 0900 		cmp.l #$09000000,d5
+ 196      0000 
+ 197 00da 6706      		beq TICK_SEC_CARRY
+ 198 00dc 5238 0900 		add.b #1,$900
+ 199 00e0 605C      		bra TICK_END
+ 200               	TICK_SEC_CARRY:
+ 201 00e2 11FC 0000 		move.b #00,$900
+ 201      0900 
+ 202 00e8 2A04      		move.l d4,d5
+ 203 00ea 0285 00FF 		and.l #$00FF0000,d5
+ 203      0000 
+ 204 00f0 0C85 0005 		cmp.l #$00050000,d5
+ 204      0000 
+ 205 00f6 6706      		beq TICK_TEN_SEC_CARRY
+68K GAS  ./digitalur.s 			page 5
+
+
+ 206 00f8 5238 0901 		add.b #1,$901
+ 207 00fc 6040      		bra TICK_END
+ 208               	TICK_TEN_SEC_CARRY:	
+ 209 00fe 11FC 0000 		move.b #00,$901
+ 209      0901 
+ 210 0104 2A04      		move.l d4,d5
+ 211 0106 0285 0000 		and.l #$0FF00,d5
+ 211      FF00 
+ 212 010c 0C85 0000 		cmp.l #$00000900,d5
+ 212      0900 
+ 213 0112 6706      		beq TICK_MIN_CARRY		
+ 214 0114 5238 0902 		add.b #1,$902
+ 215 0118 6024      		bra TICK_END
+ 216               	TICK_MIN_CARRY:	
+ 217 011a 11FC 0000 		move.b #00,$902
+ 217      0902 
+ 218 0120 2A04      		move.l d4,d5
+ 219 0122 0285 0000 		and.l #$0FF,d5
+ 219      00FF 
+ 220 0128 0C85 0000 		cmp.l #$00000005,d5
+ 220      0005 
+ 221 012e 6706      		beq TICK_TEN_MIN_CARRY		
+ 222 0130 5238 0903 		add.b #1,$903
+ 223 0134 6008      		bra TICK_END
+ 224               	TICK_TEN_MIN_CARRY:	
+ 225 0136 21FC 0000 		move.l #$00,$900
+ 225      0000 0900 
+ 226               	TICK_END:	
+ 227 013e 4E73      		rte
+ 228               	
+ 229               		
+ 230               	;	add.b #1,d0
+ 231               	;	cmp.b #10,d0
+ 232               	;	bne tock
+ 233               	;	and.b #$00,d0 		;first segment
+ 234               	;	
+ 235               	;	add.w #$100,d0
+ 236               	;	cmp.w #$700,d0
+ 237               	;	bne tock
+ 238               	;	and.w #$00,d0 		;second segment
+ 239               	;
+ 240               	;	swap d0			;strategy only works for .b .w saved by swap
+ 241               	;	add.b #1,d0
+ 242               	;	cmp.b #10,d0
+ 243               	;	bne resetD0		;swap d0 to it's correct position
+ 244               	;	and.b #$00,d0 		;third segment
+ 245               	;
+ 246               	;	add.w #$100,d0
+ 247               	;	cmp.w #$700,d0
+ 248               	;	bne resetD0
+ 249               	;	and.l #$00,d0 		;reached limit of our clock so zero everything
+ 250               	;
+ 251               	resetD0:
+ 252 0140 4840      		swap d0
+ 253               	tock:
+ 254 0142 21C0 0900 		move.l d0,$900		;incremented time pushed back to mem
+ 255 0146 4E73      		rte
+68K GAS  ./digitalur.s 			page 6
+
+
+ 256               	
+ 257               	;;
+ 258               	;;----------------------------------------------------------------------
+ 259               	;;
+ 260               	;; Table of constants represent numbers 0-9 in in led-display
+ 261               	;;   	 
+ 262               	;;  Mapping of input connectors on board to LED segtments
+ 263               	;;    _A_
+ 264               	;;  F|_G_|B
+ 265               	;;  E|___|C
+ 266               	;;     D
+ 267               	;;
+ 268               	;;   Hardwired mapping from PIAA to 7-SEG
+ 269               	;;     6   5   4   3   2   1   0
+ 270               	;;   ----------------------------
+ 271               	;;   | G | F | E | D | C | B | A |
+ 272               	;;   ----------------------------
+ 273               	;;
+ 274               	;;----------------------------------------------------------------------
+ 275               	;;
+ 276               	SJUSEGTAB 
+ 277 0148 3F        		  dc.b $3F ;0
+ 278 0149 06        		  dc.b $06 ;1
+ 279 014a 5B        		  dc.b $5B ;2
+ 280 014b 4F        		  dc.b $4F ;3
+ 281 014c 66        		  dc.b $66 ;4 
+ 282 014d 6D        		  dc.b $6D ;5 5D
+ 283 014e 7D        		  dc.b $7D ;6
+ 284 014f 07        		  dc.b $07 ;7
+ 285 0150 7F        		  dc.b $7F ;8
+ 286 0151 67        		  dc.b $67 ;9 
+ 287               	
+ 288               	
+ 289               	MAIN
+ 290 0152 60FE      		bra MAIN
+ 291 0154 4E75      		rts
+ 292               	

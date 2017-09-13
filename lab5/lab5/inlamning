@@ -1,0 +1,84 @@
+*******************************************************************************
+       Din nuvarande f�rberedelseuppgift f�r lab 5 ser ut som f�ljer
+*******************************************************************************
+
+***************************************************************************
+
+I denna förberedelseuppgift har du till uppgift att avgöra hur en
+cache reagerar på ett antal minnesläsningar. Följande antaganden gäller:
+
+
+* Ifrån början är varenda cacheline tom (markerad som invalid)
+* Storleken på cachen är 256 kilobyte (dvs 2^18 bytes)
+* Cachen är gruppassociativ med fyra vägar
+* En cacheline har längden 16 byte
+* Vid en cachemiss kommer cachen aldrig att kasta ut en cacheline så
+  länge den istället kan välja att fylla på en tom cacheline.
+* Det vill säga, den har samma parametrar som den cache som diskuteras
+  i exemplet i labhäftet.
+
+***************************************************************************
+
+Den fråga du ska svara på är:
+
+Hur många cachemissar kommer följande sekvens av 32-bitars läsningar att
+ge upphov till?
+
+ Radnr. Adress 
+     1	819a   000 0 | Miss 819a0000-819a000f tex index 0 väg  0  
+     2	819a   000 4 |                                              000,200
+		     |
+     3	819a   200 4 | miss 819a2000-819a200f index 200 väg 0
+     4	819a   200 0 |
+	
+     5	819a   1ff c | miss 819a1ff0-819a1fff index 1ff väg 0     1ff
+	
+     6	8199   fff c | miss 8199fff0-8199ffff index fff väg 0     fff
+	
+     7	8199   dff c | miss 8199dff0-8199dfff index dff väg 0     dff
+	
+     8	8199   e00 0 |miss 8199e000-8199e00f index e00 väg 0      e00
+     9	8199   e00 4 |
+	
+    10	8199   e00 8 |miss 8199e000-8199e00f index e00 väg 1      fel!!! troligen var svaret 12
+	
+    11	819a   000 8 | **********träff lästes in i rad1
+	
+    12	819a   200 8 | **********träff lästes in i rad3
+	
+    13	819a   400 8 | miss 819a4000-819a400f index 400 väg 0
+    14	819a   400 4 |
+    15	819a   400 0 |
+	
+    16	819a   3ff c | miss 819a3ff0-819a3fff index 3ff väg0
+    17	819a   3ff 8 |
+	
+    18	819a   1ff 8 | **********träff lästes in i rad 5
+	
+    19	8199   fff 8 | miss 8199fff0-8199ffff index fff väg 1
+	
+    20	8199   dff 8 |  **********träff lästes in i rad 7
+
+    21	8199   bff 8 | miss 8199bff0-8199bfff index bff väg 0
+    22	8199   bff c |
+	
+    23	8199   c00 0 | miss 8199c000-8199c00f index c00 väg 0
+    24	8199   c00 4 |
+    25	8199   c00 8 |
+    26	8199   c00 c |
+-----------------------------------------------------------------------	
+    27	8199   e00 c | *******************träff
+	
+    28	819a   000 c | ********************träff
+    29	819a   200 c | ********************träff 
+	
+    30	819a   400 c | *******************träff
+	
+    31	819a   600 c | miss 819a6000-819a600f index 600 väg 0
+    32	819a   600 8 |
+    33	819a   600 4 |
+    34	819a   600 0 |
+    35	
+
+
+*******************************************************************************

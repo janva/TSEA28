@@ -1,0 +1,79 @@
+node_modules
+dist
+.tmp
+bower_components
+.idea/*
+projectFilesBackup/*
+#probably webstorm
+.idea/*
+
+#emacs and such
+*~
+.\#*
+#*
+\#*\#
+
+
+#yeoman node grunt bower 
+node_modules
+bower_components
+
+Gruntfile.js
+bower.json
+package.json
+
+dist
+.tmp
+test
+
+#sublime stuff
+*.sublime-project
+*.sublime-workspace
+
+#tern 
+.tern-project
+#using bower to keep track of libs but don't want intrude on 
+#how others do this so ignore lib directorys for my branch 
+#Note adjust index.html accordingly when pushing to remote 
+#at least if merging to master. 
+js/lib/*
+WebGL/libs
+
+#C and c++
+
+# Compiled Object files
+*.slo
+*.lo
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
